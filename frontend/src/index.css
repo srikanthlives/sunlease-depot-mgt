@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body { background: #f5f7fb; color: #12203A; }
+input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.tabular-nums { font-variant-numeric: tabular-nums; }
+
+@media print {
+  html, body { background: #fff; }
+  @page { size: A4 landscape; margin: 10mm; }
+  .print-break { break-before: page; }
+}

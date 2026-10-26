@@ -1,0 +1,19 @@
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+sqlalchemy==2.0.23
+pydantic==2.5.0
+pydantic-settings==2.1.0
+python-jose[cryptography]==3.3.0
+bcrypt==4.0.1
+python-multipart==0.0.6
+python-dateutil==2.8.2
+openpyxl==3.1.5
+# scanned sheet reading (offline): rasterise the PDF, register the page, read the boxes
+pypdfium2==4.30.0
+opencv-python-headless==4.10.0.84
+numpy==1.26.4
+pytesseract==0.3.13
+requests==2.31.0
+tzdata
+pytest==7.4.4
+httpx==0.25.2

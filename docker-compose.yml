@@ -1,0 +1,13 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8030:8000"
+    environment:
+      DEPOT_SECRET_KEY: "${DEPOT_SECRET_KEY:?set DEPOT_SECRET_KEY in .env - generate with: openssl rand -hex 32}"
+      DEPOT_DATABASE_URL: sqlite:////data/depot.db
+      DEPOT_HRMS_SYNC_URL: "${DEPOT_HRMS_SYNC_URL:-}"
+      DEPOT_HRMS_SYNC_TOKEN: "${DEPOT_HRMS_SYNC_TOKEN:-}"
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
