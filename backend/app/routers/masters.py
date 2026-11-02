@@ -1,4 +1,5 @@
 import datetime as dt
+import re
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
@@ -109,6 +110,18 @@ def delete_location(location_id: int, db: Session = Depends(get_db), sc: Scope =
 
 
 # ---------------- vehicles ----------------
+def _fleet_key(fleet_number: str) -> list:
+    """Sort fleet numbers the way a depot reads them: 1, 2, 10, 100 - not 1, 10, 100, 2.
+
+    Fleet numbers are free text (a bare number, or something like EV-101), so the digit runs are
+    compared as numbers and everything else as lower-case text, so a plain numeric fleet comes
+    before a lettered one (1, 2, 10, EV-9, EV-101). Kept in Python rather than in the query
+    because SQLite has no natural collation and the list is built row by row anyway.
+    """
+    return [(0, int(part), "") if part.isdigit() else (1, 0, part.lower())
+            for part in re.split(r"(\d+)", fleet_number or "") if part]
+
+
 def _vehicle_out(db: Session, v: Vehicle) -> dict:
     sched = (db.query(BusSchedule.schedule_code).join(ScheduleVersion)
              .filter(BusSchedule.vehicle_id == v.vehicle_id, ScheduleVersion.status == VersionStatus.PUBLISHED)
@@ -140,7 +153,8 @@ def list_vehicles(q: str | None = None, status: str | None = None, home_depot_id
         query = query.filter(Vehicle.status == status)
     if home_depot_id:
         query = query.filter(Vehicle.home_depot_id == home_depot_id)
-    return [_vehicle_out(db, v) for v in query.order_by(Vehicle.fleet_number).all()]
+    rows = sorted(query.all(), key=lambda v: _fleet_key(v.fleet_number))
+    return [_vehicle_out(db, v) for v in rows]
 
 
 @router.post("/vehicles", response_model=S.VehicleOut, status_code=201)
