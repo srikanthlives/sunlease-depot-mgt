@@ -7,7 +7,7 @@ echo "Starting Sunlease Depot Management"
 if [ -n "$DEPOT_RUNNING_IN_DOCKER" ]; then
     cd /app
     python -m app.seed --users      # creates default logins on first start only
-    exec uvicorn app.main:app --host 0.0.0.0 --port 8000
+    exec uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-8000}"
 fi
 
 cd "$ROOT_DIR/backend"

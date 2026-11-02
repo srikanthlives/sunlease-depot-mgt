@@ -2,7 +2,7 @@
 FROM node:20-alpine AS frontend-builder
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
-RUN npm install --legacy-peer-deps
+RUN npm ci --legacy-peer-deps
 COPY frontend/ ./
 RUN npm run build
 
@@ -19,5 +19,5 @@ RUN chmod +x ./startup.sh && mkdir -p /data
 ENV DEPOT_DATABASE_URL=sqlite:////data/depot.db
 ENV DEPOT_RUNNING_IN_DOCKER=1
 HEALTHCHECK --interval=30s --timeout=3s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:8000/api/health || exit 1
+    CMD curl -f "http://localhost:${PORT:-8000}/api/health" || exit 1
 CMD ["./startup.sh"]

@@ -1,0 +1,20 @@
+# Never ship host-built dependencies or artifacts into the image
+**/node_modules
+frontend/dist
+**/__pycache__
+**/*.pyc
+.venv
+venv
+
+# Local state / secrets
+.env
+.env.*
+!.env.example
+data
+*.db
+*.sqlite3
+
+.git
+.gitignore
+.claude
+test-scans
