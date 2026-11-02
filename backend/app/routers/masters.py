@@ -463,11 +463,24 @@ async def employee_import(file: UploadFile = File(...), db: Session = Depends(ge
     return result
 
 
-@router.post("/employees-sync-hrms")
-def employee_sync(db: Session = Depends(get_db), sc: Scope = Depends(scope)):
+@router.get("/employees-hrms-preview")
+def employee_sync_preview(db: Session = Depends(get_db), sc: Scope = Depends(scope)):
+    """The HRMS payload as it stands, marked up against what is already here. Writes nothing."""
     cc = sc.target(Role.SCHEDULER)
-    result = employee_service.sync_from_hrms(db, cc, sc.companies[cc])
-    audit_service.record(db, sc.user, "SYNC", "Employee", None, {k: result[k] for k in ("created", "updated")})
+    return employee_service.preview_hrms(db, cc, sc.companies[cc])
+
+
+@router.post("/employees-sync-hrms")
+def employee_sync(body: S.HrmsSyncIn | None = None, db: Session = Depends(get_db), sc: Scope = Depends(scope)):
+    """Pull the ticked stints (`keys` from the preview). No body pulls the whole payload."""
+    cc = sc.target(Role.SCHEDULER)
+    keys = body.keys if body and body.keys is not None else None
+    if keys is not None and not keys:
+        raise HTTPException(422, "Select at least one employee to sync")
+    result = employee_service.sync_from_hrms(db, cc, sc.companies[cc], keys)
+    audit_service.record(db, sc.user, "SYNC", "Employee", None,
+                         {k: result[k] for k in ("created", "updated", "skipped")}
+                         | {"selected": len(keys) if keys is not None else "all"})
     db.commit()
     return result
 
@@ -572,7 +585,7 @@ def employees_free_on(on: dt.date, staff_type: str | None = None, db: Session = 
 @router.get("/settings")
 def get_settings(db: Session = Depends(get_db), sc: Scope = Depends(scope)):
     cc = sc.target(Role.VIEWER)
-    return {"cost_center_id": cc, "values": settings_service.get_all(db, cc),
+    return {"cost_center_id": cc, "values": settings_service.masked(settings_service.get_all(db, cc)),
             "descriptions": {k: d[1] for k, d in settings_service.DEFAULTS.items()}}
 
 
@@ -583,6 +596,8 @@ def put_settings(body: S.SettingsIn, db: Session = Depends(get_db), sc: Scope = 
         values = settings_service.update(db, cc, body.values)
     except ValueError as exc:
         raise HTTPException(422, str(exc))
-    audit_service.record(db, sc.user, "UPDATE", "Settings", cc, body.values)
+    audit_service.record(db, sc.user, "UPDATE", "Settings", cc,
+                         {k: (settings_service.MASK if k in settings_service.SECRET_KEYS else v)
+                          for k, v in body.values.items()})
     db.commit()
-    return {"values": values}
+    return {"values": settings_service.masked(values)}

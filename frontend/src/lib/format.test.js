@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fmtDate, parseDate, parseTime, fmtDuration, relMin, fmtRel } from "./format.js";
+import { fmtDate, parseDate, parseTime, fmtDuration, relMin, fmtRel, dirLabel } from "./format.js";
 
 const now = new Date(2026, 9, 21); // 21-Oct-2026
 
@@ -50,4 +50,12 @@ test("durations use day offsets, not clock times alone", () => {
   assert.equal(relMin(1, "04:30") - relMin(0, "22:30"), 360);
   assert.equal(fmtDuration(360), "6h 00m");
   assert.equal(fmtRel(relMin(1, "04:30")), "04:30 +1");
+});
+
+test("a direction reads as its code then its display name", () => {
+  assert.equal(dirLabel({ direction_code: "UPSTREAM", direction_name: "Airport to City Centre" }),
+    "UPSTREAM · Airport to City Centre");
+  assert.equal(dirLabel({ direction_code: "DOWNSTREAM" }), "DOWNSTREAM");   // name missing
+  assert.equal(dirLabel({ direction_name: "Airport to City Centre" }), "Airport to City Centre");
+  assert.equal(dirLabel(undefined), "");
 });

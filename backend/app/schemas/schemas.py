@@ -395,6 +395,11 @@ class SettingsIn(BaseModel):
     values: dict
 
 
+class HrmsSyncIn(BaseModel):
+    """Which stints of the HRMS payload to pull in. None means all of them."""
+    keys: Optional[list[str]] = None
+
+
 # ---- schedules ----------------------------------------------------------
 class ScheduleCloneIn(BaseModel):
     """A copy of an existing schedule, as a new draft."""

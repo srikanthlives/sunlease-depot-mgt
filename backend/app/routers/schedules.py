@@ -91,6 +91,7 @@ def _activity_out(a: ScheduledActivity) -> dict:
         out["trip"] = {
             "trip_number": t.trip_number, "route_id": t.route_id, "direction_id": t.direction_id,
             "route_code": t.route.route_code, "direction_code": t.direction.direction_code,
+            "direction_name": t.direction.direction_name,
             "planned_distance_km": t.planned_distance_km, "planned_start_soc_pct": t.planned_start_soc_pct,
             "planned_end_soc_pct": t.planned_end_soc_pct,
             "stops": [{"scheduled_stop_time_id": s.scheduled_stop_time_id, "route_stop_id": s.route_stop_id,

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { AlertOctagon, AlertTriangle } from "lucide-react";
 import { useTooltip } from "./Tooltip";
 import { INK, STATUS, TYPE_COLOR, TYPE_SHORT } from "./colors";
-import { addDays, fmtDate, fmtDuration, fmtRel, label } from "../../lib/format";
+import { addDays, dirLabel, fmtDate, fmtDuration, fmtRel, label } from "../../lib/format";
 
 /**
  * Gantt-style timeline of one operating cycle.
@@ -70,7 +70,7 @@ export default function ScheduleGantt({ activities, operatingDate, gapWarn = 30,
       <p className="font-semibold">#{a.sequence_number} {label(a.activity_type)}{a.trip ? ` ${a.trip.trip_number}` : ""}</p>
       <p>{a.origin_name} → {a.destination_name}</p>
       <p className="tabular-nums">{fmtRel(a.start_min)} – {fmtRel(a.end_min)} · {fmtDuration(a.end_min - a.start_min)}</p>
-      {a.trip && <p>{a.trip.route_code} {a.trip.direction_code} · {Number(a.trip.planned_distance_km)} km</p>}
+      {a.trip && <p>{a.trip.route_code} {dirLabel(a.trip)} · {Number(a.trip.planned_distance_km)} km</p>}
       {a.movement && <p>{label(a.movement.movement_purpose)} · {label(a.movement.payability_status)} · {Number(a.movement.planned_distance_km)} km</p>}
     </div>
   );

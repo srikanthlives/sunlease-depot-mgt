@@ -155,4 +155,7 @@ export const LABELS = {
   HANDED_OVER: "Handed over part-way", TOOK_OVER: "Took over mid-duty",
 };
 export const label = (v) => LABELS[v] || v;
+/** A trip's direction as shown to the user: the code it is known by, then its display name.
+ *  Either part may be missing on an older payload, so both are optional. */
+export const dirLabel = (t) => [t?.direction_code, t?.direction_name].filter(Boolean).join(" · ");
 export const options = (values) => values.map((v) => ({ value: v, label: label(v) }));

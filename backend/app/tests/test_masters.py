@@ -115,3 +115,93 @@ def test_route_with_trips_cannot_be_deleted(world):
     assert add(world, vid, trip_body(world, "up", "T1", "06:00", "06:20", "06:22", "06:50")).status_code == 201
     r = c.delete(f"/api/routes/{world['route']['route_id']}", headers=h)
     assert r.status_code == 409 and "S1" in r.json()["detail"]
+
+
+# ---- HRMS sync: preview, then pull only what was ticked ----------------------
+HRMS_PAYLOAD = [
+    {"employee_number": "H1", "full_name": "Hrms One", "staff_type": "DRIVER", "start_date": "01-Apr-2025"},
+    {"employee_number": "H2", "full_name": "Hrms Two", "staff_type": "CONDUCTOR", "start_date": "2025-05-01",
+     "end_date": "2026-06-30"},
+    {"employee_number": "H3", "full_name": "Hrms Bad", "staff_type": "PILOT", "start_date": "2025-05-01"},
+]
+
+
+class _Resp:
+    def __init__(self, payload):
+        self._p = payload
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return self._p
+
+
+def _fake_hrms(monkeypatch, payload=None):
+    calls = []
+
+    def get(url, headers=None, timeout=None):
+        calls.append({"url": url, "headers": headers or {}})
+        return _Resp(HRMS_PAYLOAD if payload is None else payload)
+
+    monkeypatch.setattr("app.services.employee_service.requests.get", get)
+    return calls
+
+
+def test_hrms_sync_is_configured_in_settings_and_token_never_leaves_the_server(client, admin):
+    assert client.get("/api/employees-hrms-preview", headers=admin).status_code == 400  # not configured
+    r = client.put("/api/settings", headers=admin,
+                   json={"values": {"hrms_sync_url": "not-a-url", "hrms_sync_token": "t"}})
+    assert r.status_code == 422 and "http" in r.text
+    r = client.put("/api/settings", headers=admin,
+                   json={"values": {"hrms_sync_url": "https://hrms.example/api/employees",
+                                    "hrms_sync_token": "secret-token"}})
+    assert r.status_code == 200
+    shown = client.get("/api/settings", headers=admin).json()["values"]
+    assert shown["hrms_sync_url"] == "https://hrms.example/api/employees"
+    assert shown["hrms_sync_token"] == "********"          # the secret is masked, not sent
+    # saving the form back with the mask keeps the stored token
+    client.put("/api/settings", headers=admin, json={"values": {"hrms_sync_token": "********"}})
+    from app.services import employee_service
+    cc = int(client.get("/api/settings", headers=admin).json()["cost_center_id"])
+    from app.db.session import SessionLocal
+    with SessionLocal() as s:
+        assert employee_service.hrms_config(s, cc)[1] == "secret-token"
+
+
+def test_hrms_preview_marks_each_row_and_sync_pulls_only_the_selection(client, admin, monkeypatch):
+    client.put("/api/settings", headers=admin,
+               json={"values": {"hrms_sync_url": "https://hrms.example/api/employees",
+                                "hrms_sync_token": "secret-token"}})
+    calls = _fake_hrms(monkeypatch)
+    rows = client.get("/api/employees-hrms-preview", headers=admin).json()["employees"]
+    assert calls[0]["headers"]["Authorization"] == "Bearer secret-token"
+    by_num = {r["employee_number"]: r for r in rows}
+    assert by_num["H1"]["action"] == "NEW" and by_num["H2"]["action"] == "NEW"
+    assert by_num["H3"]["action"] == "BLOCKED" and by_num["H3"]["key"] is None   # bad staff type
+    assert not client.get("/api/employees", headers=admin).json()               # preview wrote nothing
+
+    # pull H1 only
+    r = client.post("/api/employees-sync-hrms", headers=admin, json={"keys": [by_num["H1"]["key"]]}).json()
+    assert (r["created"], r["updated"], r["errors"]) == (1, 0, [])
+    assert [e["employee_number"] for e in client.get("/api/employees", headers=admin).json()] == ["H1"]
+
+    # H1 now shows as an update; pulling it again updates rather than duplicates
+    again = {r["employee_number"]: r for r in
+             client.get("/api/employees-hrms-preview", headers=admin).json()["employees"]}
+    assert again["H1"]["action"] == "UPDATE"
+    r = client.post("/api/employees-sync-hrms", headers=admin, json={"keys": [again["H1"]["key"]]}).json()
+    assert (r["created"], r["updated"]) == (0, 1)
+    assert len(client.get("/api/employees", headers=admin).json()) == 1
+
+
+def test_hrms_sync_rejects_an_empty_selection_and_reports_a_vanished_row(client, admin, monkeypatch):
+    client.put("/api/settings", headers=admin,
+               json={"values": {"hrms_sync_url": "https://hrms.example/api/employees"}})
+    _fake_hrms(monkeypatch)
+    assert client.post("/api/employees-sync-hrms", headers=admin, json={"keys": []}).status_code == 422
+    r = client.post("/api/employees-sync-hrms", headers=admin, json={"keys": ["H9|2025-01-01"]}).json()
+    assert r["created"] == 0 and "no longer in the HRMS payload" in r["errors"][0]["error"]
+    # no body still pulls everything selectable, as before
+    r = client.post("/api/employees-sync-hrms", headers=admin).json()
+    assert r["created"] == 2 and len(r["errors"]) == 1       # H3 has a bad staff type

@@ -3,8 +3,8 @@ import { ArrowRightLeft, Download, Plus, RefreshCw, Upload } from "lucide-react"
 import client, { apiErrorMessage } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
-import { Badge, Button, Card, IconButton, Modal, PageHeader, Table } from "../components/ui";
-import { Combobox, DateInput, Select, TextInput } from "../components/inputs";
+import { Badge, Button, Card, IconButton, Modal, PageHeader, Spinner, Table } from "../components/ui";
+import { Checkbox, Combobox, DateInput, Select, TextInput } from "../components/inputs";
 import { fmtDate, label, options, todayIso } from "../lib/format";
 import { locOptions, useApi } from "../lib/useApi";
 
@@ -29,6 +29,7 @@ export default function Employees() {
   const [errors, setErrors] = useState({});
   const [importResult, setImportResult] = useState(null);
   const [transfer, setTransfer] = useState(null);
+  const [sync, setSync] = useState(null);
   const [busy, setBusy] = useState(false);
   const file = useRef(null);
   const rows = useMemo(() => (data || []).filter((e) => (!staff || e.staff_type === staff) &&
@@ -103,10 +104,29 @@ export default function Employees() {
       file.current.value = "";
     }
   };
-  const sync = async () => {
+  /** Sync from HRMS is a two-step: preview what the payload holds, then pull only what is ticked. */
+  const openSync = async () => {
+    setSync({ loading: true, rows: [], picked: [] });
+    try {
+      const { data: p } = await client.get("/employees-hrms-preview");
+      const rows = p.employees || [];
+      setSync({ loading: false, rows, source_url: p.source_url,
+                picked: rows.filter((r) => r.key && r.action === "NEW").map((r) => r.key) });
+    } catch (err) {
+      setSync(null);
+      toast.error(apiErrorMessage(err));
+    }
+  };
+  const toggle = (key) => setSync((s) => ({ ...s,
+    picked: s.picked.includes(key) ? s.picked.filter((k) => k !== key) : [...s.picked, key] }));
+  const toggleAll = (on) => setSync((s) => ({ ...s,
+    picked: on ? s.rows.filter((r) => r.key).map((r) => r.key) : [] }));
+  const runSync = async () => {
+    if (!sync.picked.length) return toast.error("Tick the employees to sync");
     setBusy(true);
     try {
-      const r = await client.post("/employees-sync-hrms");
+      const r = await client.post("/employees-sync-hrms", { keys: sync.picked });
+      setSync(null);
       setImportResult({ ...r.data, title: "HRMS sync" });
       reload();
     } catch (err) {
@@ -124,7 +144,7 @@ export default function Employees() {
             <Button variant="secondary" icon={Download} onClick={download}>Template</Button>
             <Button variant="secondary" icon={Upload} loading={busy} onClick={() => file.current.click()}>Upload Excel</Button>
             <input ref={file} type="file" accept=".xlsx" className="hidden" onChange={(e) => upload(e.target.files[0])} />
-            <Button variant="secondary" icon={RefreshCw} loading={busy} onClick={sync}>Sync from HRMS</Button>
+            <Button variant="secondary" icon={RefreshCw} loading={busy} onClick={openSync}>Sync from HRMS</Button>
             <Button icon={Plus} onClick={() => { setErrors({}); setEdit({ ...blank }); }}>New employee</Button>
           </>
         )} />
@@ -212,6 +232,50 @@ export default function Employees() {
                 </p>
               </>
             )}
+          </div>
+        )}
+      </Modal>
+      <Modal open={!!sync} xwide title="Sync from HRMS"
+        onClose={() => setSync(null)} onSave={runSync}
+        footer={sync && !sync.loading ? (
+          <>
+            <Button variant="secondary" onClick={() => setSync(null)} type="button">Cancel</Button>
+            <Button loading={busy} onClick={runSync} type="button"
+              disabled={!sync.picked.length}>Sync {sync.picked.length} selected</Button>
+          </>
+        ) : <Button variant="secondary" onClick={() => setSync(null)} type="button">Cancel</Button>}>
+        {sync?.loading && <Spinner />}
+        {sync && !sync.loading && (
+          <div className="space-y-3">
+            <p className="text-xs text-slate-500">
+              {sync.rows.length} employee record(s) from <span className="font-mono">{sync.source_url}</span>.
+              Tick the ones to pull into <b>{ccCode(cc)}</b>. New stints are ticked for you; nothing is
+              written until you press Sync.
+            </p>
+            <Table rowKey={(r) => r.key || `bad-${r.row}`} rows={sync.rows}
+              empty="HRMS returned no employees"
+              rowClassName={(r) => r.action === "BLOCKED" && "bg-danger/5"}
+              columns={[
+                { key: "pick", className: "w-10",
+                  title: <Checkbox label="" checked={sync.rows.some((r) => r.key) && sync.picked.length === sync.rows.filter((r) => r.key).length}
+                    onChange={toggleAll} />,
+                  render: (r) => (r.key
+                    ? <Checkbox label="" checked={sync.picked.includes(r.key)} onChange={() => toggle(r.key)} />
+                    : <span className="text-slate-300">—</span>) },
+                { key: "employee_number", title: "Emp. no.", className: "font-medium" },
+                { key: "full_name", title: "Name" },
+                { key: "designation", title: "Designation", render: (r) => r.designation || "—" },
+                { key: "staff_type", title: "Staff type", render: (r) => (r.staff_type ? label(r.staff_type) : "—") },
+                { key: "home_depot_code", title: "Depot", render: (r) => r.home_depot_code || "—" },
+                { key: "dates", title: "Employment", className: "tabular-nums whitespace-nowrap",
+                  render: (r) => (r.start_date ? `${fmtDate(r.start_date)} → ${r.end_date ? fmtDate(r.end_date) : "present"}` : "—") },
+                { key: "action", title: "Will", render: (r) => (
+                  <Badge value={r.action === "NEW" ? "ACTIVE" : r.action === "UPDATE" ? "TO_BE_CONFIRMED" : "INACTIVE"}>
+                    {r.action === "NEW" ? "Create" : r.action === "UPDATE" ? "Update" : "Cannot sync"}
+                  </Badge>) },
+                { key: "error", title: "", render: (r) => r.error
+                  ? <span className="text-xs text-danger">{r.error}</span> : null },
+              ]} />
           </div>
         )}
       </Modal>

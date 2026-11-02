@@ -4,7 +4,7 @@ import client, { apiErrorMessage } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import { Button, Card, PageHeader, Spinner } from "../components/ui";
-import { Checkbox, NumberInput } from "../components/inputs";
+import { Checkbox, NumberInput, TextInput } from "../components/inputs";
 import { useFormKeys } from "../lib/keys";
 import { label } from "../lib/format";
 import { useApi } from "../lib/useApi";
@@ -55,6 +55,14 @@ export default function SettingsPage() {
             })}
             <p className="mt-1 text-xs text-slate-500">Billing is planned km minus km lost to cancelled or cut-short runs; losses attributable to a ticked party are not deducted.</p>
           </div>
+          <p className="border-t border-slate-100 pt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">HRMS sync</p>
+          <p className="text-xs text-slate-500">Used by <b>Sync from HRMS</b> on the Employees page, which lists what the endpoint returns and lets you pick who to pull in. Left empty, the deployment-wide <span className="font-mono">DEPOT_HRMS_SYNC_URL</span> is used.</p>
+          <TextInput label={d.hrms_sync_url} placeholder="https://hrms.example.com/api/employees"
+            value={v.hrms_sync_url || ""} onChange={(e) => setV({ ...v, hrms_sync_url: e.target.value })} />
+          <TextInput label={d.hrms_sync_token} type="password" autoComplete="new-password"
+            placeholder="No token" value={v.hrms_sync_token || ""}
+            onChange={(e) => setV({ ...v, hrms_sync_token: e.target.value })}
+            hint="Stored on the server and never sent back to the browser - the dots stand for the saved token." />
           {admin ? <Button icon={Save} onClick={save}>Save</Button> : <p className="text-xs text-slate-500">Only an admin of this cost center can change these.</p>}
         </fieldset>
       </Card>

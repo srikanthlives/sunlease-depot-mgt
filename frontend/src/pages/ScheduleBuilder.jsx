@@ -16,7 +16,7 @@ import SummaryTiles from "../components/viz/SummaryTiles";
 import BusUsage from "../components/viz/BusUsage";
 import CrewCard from "../components/CrewCard";
 import { TYPE_COLOR } from "../components/viz/colors";
-import { addDays, fmtDate, fmtDuration, fmtRel, label, todayIso } from "../lib/format";
+import { addDays, dirLabel, fmtDate, fmtDuration, fmtRel, label, todayIso } from "../lib/format";
 import { useApi } from "../lib/useApi";
 
 const ADD = [
@@ -28,7 +28,7 @@ const ADD = [
 ];
 
 function detailText(a) {
-  if (a.trip) return `${a.trip.trip_number} · ${a.trip.route_code} ${a.trip.direction_code} · ${a.trip.stops.length} stops`;
+  if (a.trip) return `${a.trip.trip_number} · ${a.trip.route_code} ${dirLabel(a.trip)} · ${a.trip.stops.length} stops`;
   if (a.movement) return `${label(a.movement.movement_purpose)}`;
   if (a.charging) return a.charging.planned_start_soc_pct !== null && a.charging.planned_end_soc_pct !== null ? `SOC ${Number(a.charging.planned_start_soc_pct)}% → ${Number(a.charging.planned_end_soc_pct)}%` : "Charging session";
   if (a.halt) return a.halt.planned_start_soc_pct !== null && a.halt.planned_end_soc_pct !== null ? `Off service · SOC ${Number(a.halt.planned_start_soc_pct)}% → ${Number(a.halt.planned_end_soc_pct)}%` : "Off service";

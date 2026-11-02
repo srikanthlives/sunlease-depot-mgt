@@ -135,39 +135,119 @@ def import_workbook(db: Session, content: bytes, cost_center_id: int, company_id
     return {"created": created, "updated": updated, "errors": []}
 
 
-def sync_from_hrms(db: Session, cost_center_id: int, company_id: int) -> dict:
-    """Pull employees from the HRMS export endpoint. Expected JSON: a list of
-    {employee_number, full_name, designation, staff_type, home_depot_code,
-     start_date, end_date, status} (ISO or DD-MMM-YYYY dates)."""
-    if not settings.HRMS_SYNC_URL:
-        raise HTTPException(400, "HRMS sync is not configured (set DEPOT_HRMS_SYNC_URL and DEPOT_HRMS_SYNC_TOKEN)")
+def hrms_config(db: Session, cost_center_id: int) -> tuple[str, str]:
+    """The depot's own HRMS endpoint, falling back to the deployment-wide env vars."""
+    from app.services import settings_service
+    cfg = settings_service.get_all(db, cost_center_id)
+    url = (cfg.get("hrms_sync_url") or "").strip() or settings.HRMS_SYNC_URL
+    token = (cfg.get("hrms_sync_token") or "").strip() or settings.HRMS_SYNC_TOKEN
+    return url, token
+
+
+def _fetch(url: str, token: str) -> list:
     try:
-        headers = {"Authorization": f"Bearer {settings.HRMS_SYNC_TOKEN}"} if settings.HRMS_SYNC_TOKEN else {}
-        resp = requests.get(settings.HRMS_SYNC_URL, headers=headers, timeout=30)
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        resp = requests.get(url, headers=headers, timeout=30)
         resp.raise_for_status()
         payload = resp.json()
     except Exception as exc:
         raise HTTPException(502, f"Could not fetch employees from HRMS: {exc}")
+    return payload if isinstance(payload, list) else payload.get("employees", [])
+
+
+def row_key(number: str, start: dt.date) -> str:
+    """Identifies one stint in the HRMS payload, so the UI can send back a selection
+    rather than employee data of its own."""
+    return f"{number}|{start:%Y-%m-%d}"
+
+
+def _parse_item(item: dict, depots: dict) -> EmployeeIn:
+    code = str(item.get("home_depot_code") or "").strip().upper()
+    if code and code not in depots:
+        raise ValueError(f"unknown depot code '{code}'")
+    return EmployeeIn(
+        employee_number=str(item["employee_number"]).strip(), full_name=item["full_name"],
+        designation=item.get("designation"),
+        staff_type=str(item.get("staff_type") or StaffType.DRIVER).upper(),
+        home_depot_id=depots.get(code), start_date=parse_date(item["start_date"]),
+        end_date=parse_date(item.get("end_date")), status=str(item.get("status") or "ACTIVE").upper())
+
+
+def preview_hrms(db: Session, cost_center_id: int, company_id: int) -> dict:
+    """What a sync would do, without writing anything: one entry per employee in the HRMS
+    payload, each marked NEW, UPDATE or BLOCKED so the user can pick which ones to pull in."""
+    url, token = hrms_config(db, cost_center_id)
+    if not url:
+        raise HTTPException(400, "HRMS sync is not configured - set the HRMS URL under Settings")
     depots = _depots(db, company_id)
-    created = updated = 0
-    errors = []
-    for n, item in enumerate(payload if isinstance(payload, list) else payload.get("employees", []), start=1):
+    out = []
+    for n, item in enumerate(_fetch(url, token), start=1):
         try:
-            code = str(item.get("home_depot_code") or "").strip().upper()
-            data = EmployeeIn(
-                employee_number=str(item["employee_number"]).strip(), full_name=item["full_name"],
-                designation=item.get("designation"),
-                staff_type=str(item.get("staff_type") or StaffType.DRIVER).upper(),
-                home_depot_id=depots.get(code), start_date=parse_date(item["start_date"]),
-                end_date=parse_date(item.get("end_date")), status=str(item.get("status") or "ACTIVE").upper())
+            data = _parse_item(item, depots)
+        except Exception as exc:
+            out.append({"key": None, "row": n, "employee_number": str(item.get("employee_number") or "?"),
+                        "full_name": item.get("full_name") or "", "action": "BLOCKED",
+                        "error": str(exc).split("\n")[0][:200]})
+            continue
+        existing = db.query(Employee).filter(Employee.employee_number == data.employee_number,
+                                             Employee.start_date == data.start_date).first()
+        error = None
+        if existing is not None and existing.cost_center_id != cost_center_id:
+            error = "This stint belongs to another cost center"
+        else:
+            try:
+                check_overlap(db, data.employee_number, data.start_date, data.end_date,
+                              existing.employee_id if existing else None)
+            except HTTPException as exc:
+                error = exc.detail
+        out.append({"key": row_key(data.employee_number, data.start_date), "row": n,
+                    **data.model_dump(mode="json"),
+                    "home_depot_code": str(item.get("home_depot_code") or "").strip().upper() or None,
+                    "action": "BLOCKED" if error else ("UPDATE" if existing else "NEW"),
+                    "error": error})
+    return {"source_url": url, "employees": out}
+
+
+def sync_from_hrms(db: Session, cost_center_id: int, company_id: int,
+                   keys: list[str] | None = None) -> dict:
+    """Pull employees from the HRMS export endpoint. Expected JSON: a list of
+    {employee_number, full_name, designation, staff_type, home_depot_code,
+     start_date, end_date, status} (ISO or DD-MMM-YYYY dates).
+
+    `keys` restricts the pull to the stints the user ticked in the preview (see `row_key`);
+    None pulls everything the payload holds. The payload is re-fetched rather than taken from
+    the client, so a selection can never introduce employees HRMS does not have.
+    """
+    url, token = hrms_config(db, cost_center_id)
+    if not url:
+        raise HTTPException(400, "HRMS sync is not configured - set the HRMS URL under Settings")
+    wanted = set(keys) if keys is not None else None
+    depots = _depots(db, company_id)
+    created = updated = skipped = 0
+    errors = []
+    seen = set()
+    for n, item in enumerate(_fetch(url, token), start=1):
+        try:
+            data = _parse_item(item, depots)
+            key = row_key(data.employee_number, data.start_date)
+            seen.add(key)
+            if wanted is not None and key not in wanted:
+                skipped += 1
+                continue
             if _upsert(db, data, EmployeeSource.HRMS, cost_center_id) == "created":
                 created += 1
             else:
                 updated += 1
         except Exception as exc:
+            if wanted is not None and isinstance(exc, (KeyError, ValueError)):
+                skipped += 1  # an unselectable row was never picked, so it is not an error here
+                continue
             detail = exc.detail if isinstance(exc, HTTPException) else str(exc).split("\n")[0]
             errors.append({"row": n, "error": str(detail)[:200]})
-    return {"created": created, "updated": updated, "errors": errors}
+    if wanted is not None:
+        for missing in sorted(wanted - seen):
+            errors.append({"row": None, "error": f"{missing.split('|')[0]} is no longer in the HRMS payload"})
+    return {"created": created, "updated": updated, "skipped": skipped, "errors": errors}
 
 
 def references(db: Session, employee_id: int) -> dict:
