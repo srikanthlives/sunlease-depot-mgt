@@ -87,7 +87,7 @@ export default function ScheduleViewer() {
                   <table className="w-full text-sm">
                     <thead><tr className="border-b border-slate-200 text-left text-[11px] uppercase tracking-wide text-slate-500">
                       <th className="px-2 py-1.5">#</th><th className="px-2 py-1.5">Activity</th><th className="px-2 py-1.5">From → To</th>
-                      <th className="px-2 py-1.5">Start</th><th className="px-2 py-1.5">End</th><th className="px-2 py-1.5 text-right">Duration</th><th className="px-2 py-1.5 text-right">km</th><th className="px-2 py-1.5">SOC</th><th className="px-2 py-1.5">Details</th></tr></thead>
+                      <th className="px-2 py-1.5">Start</th><th className="px-2 py-1.5">End</th><th className="px-2 py-1.5 text-right">Duration</th><th className="px-2 py-1.5 text-right">km</th><th className="w-44 px-2 py-1.5 whitespace-nowrap">SOC</th><th className="w-full min-w-[18rem] px-2 py-1.5">Details</th></tr></thead>
                     <tbody>
                       {t.rows.map((a) => (
                         <tr key={a.activity_id} className="border-b border-slate-100">
@@ -98,7 +98,7 @@ export default function ScheduleViewer() {
                           <td className="px-2 py-1.5 tabular-nums whitespace-nowrap">{fmtDate(a.end_date)} {a.end_time} {a.end_date !== a.start_date && <Moon className="inline h-3.5 w-3.5 text-brand-600" />}</td>
                           <td className="px-2 py-1.5 text-right tabular-nums">{fmtDuration(a.duration_minutes)}</td>
                           <td className="px-2 py-1.5 text-right tabular-nums">{a.distance_km || ""}</td>
-                          <td className="px-2 py-1.5 text-xs"><SocCell of={a.trip || a.movement || a.charging || a.halt || a.layover} /></td>
+                          <td className="w-44 whitespace-nowrap px-2 py-1.5 text-xs"><SocCell of={a.trip || a.movement || a.charging || a.halt || a.layover} /></td>
                           <td className="px-2 py-1.5 text-xs text-slate-600">{detail(a)}</td>
                         </tr>
                       ))}
@@ -107,8 +107,7 @@ export default function ScheduleViewer() {
                       <tr className="border-t-2 border-slate-200 bg-slate-50 text-xs font-medium">
                         <td colSpan={6} className="px-2 py-1.5 text-right uppercase tracking-wide text-slate-500">Cycle total</td>
                         <td className="px-2 py-1.5 text-right tabular-nums">{km2(t.rows.reduce((n, a) => n + Number(a.distance_km || 0), 0))}</td>
-                        <td className="px-2 py-1.5"><SocTotals activities={t.rows} /></td>
-                        <td />
+                        <td colSpan={2} className="px-2 py-1.5"><SocTotals activities={t.rows} /></td>
                       </tr>
                     </tfoot>
                   </table>

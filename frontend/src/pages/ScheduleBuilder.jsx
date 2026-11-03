@@ -311,7 +311,7 @@ export default function ScheduleBuilder() {
                 <tr className="border-b border-slate-200 text-left text-[11px] uppercase tracking-wide text-slate-500">
                   <th className="w-10 px-3 py-2">#</th><th className="px-2 py-2">Type</th><th className="px-2 py-2">From → To</th>
                   <th className="px-2 py-2">Start</th><th className="px-2 py-2">End</th><th className="px-2 py-2 text-right">Duration</th>
-                  <th className="px-2 py-2 text-right">km</th><th className="px-2 py-2">SOC</th><th className="px-2 py-2">Details</th><th className="px-2 py-2" /><th className="w-32" />
+                  <th className="px-2 py-2 text-right">km</th><th className="w-44 px-2 py-2 whitespace-nowrap">SOC</th><th className="w-full min-w-[18rem] px-2 py-2">Details</th><th className="px-2 py-2" /><th className="w-32" />
                 </tr>
               </thead>
               <tbody>
@@ -355,7 +355,7 @@ export default function ScheduleBuilder() {
                         <td className="px-2 py-2 tabular-nums whitespace-nowrap">{fmtRel(a.end_min)} {crosses && <Moon className="inline h-3.5 w-3.5 text-brand-600" aria-label="crosses midnight" />}</td>
                         <td className="px-2 py-2 text-right tabular-nums">{fmtDuration(a.end_min - a.start_min)}</td>
                         <td className="px-2 py-2 text-right tabular-nums">{a.distance_km ? a.distance_km : ""}</td>
-                        <td className="px-2 py-2 text-xs"><SocCell of={a.trip || a.movement || a.charging || a.halt || a.layover} /></td>
+                        <td className="w-44 whitespace-nowrap px-2 py-2 text-xs"><SocCell of={a.trip || a.movement || a.charging || a.halt || a.layover} /></td>
                         <td className="px-2 py-2 text-xs text-slate-600">{detailText(a)}</td>
                         <td className="px-2 py-2">{a.movement && <Badge value={a.movement.payability_status} />}
                           {iss.length > 0 && <span className={`ml-1 inline-flex items-center gap-0.5 text-[11px] ${hasErr ? "text-danger" : "text-[#8a5a00]"}`} title={iss.map((i) => i.message).join("\n")}>
@@ -380,8 +380,8 @@ export default function ScheduleBuilder() {
                   <tr className="border-t-2 border-slate-200 bg-slate-50 text-xs font-medium">
                     <td colSpan={6} className="px-3 py-2 text-right uppercase tracking-wide text-slate-500">Cycle total</td>
                     <td className="px-2 py-2 text-right tabular-nums">{km2(acts.reduce((n, a) => n + Number(a.distance_km || 0), 0))}</td>
-                    <td className="px-2 py-2"><SocTotals activities={acts} /></td>
-                    <td colSpan={3} />
+                    <td colSpan={2} className="px-2 py-2"><SocTotals activities={acts} /></td>
+                    <td colSpan={2} />
                   </tr>
                 </tfoot>
               )}
