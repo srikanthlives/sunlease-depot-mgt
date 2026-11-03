@@ -6,18 +6,20 @@ import { Badge, Button, Card, Empty, PageHeader, Spinner } from "../components/u
 import { Combobox, DateInput, Select, TextInput } from "../components/inputs";
 import ScheduleGantt from "../components/viz/ScheduleGantt";
 import { TYPE_COLOR } from "../components/viz/colors";
-import { dirLabel, fmtDate, fmtDateLong, fmtDuration, label, options, todayIso } from "../lib/format";
+import { dirLabel, fmtDate, fmtDateLong, fmtDuration, label, options, socText, todayIso } from "../lib/format";
 import { locOptions, useApi } from "../lib/useApi";
 
 const TYPES = ["PASSENGER_TRIP", "NON_REVENUE_MOVEMENT", "CHARGING", "LAYOVER", "HALT"];
 
 function detail(a) {
-  if (a.trip) return `${a.trip.trip_number} · ${a.trip.route_code} ${dirLabel(a.trip)}`;
-  if (a.movement) return `${label(a.movement.movement_purpose)} · ${label(a.movement.payability_status)}`;
-  if (a.charging) return a.charging.start_soc !== null ? `SOC ${a.charging.start_soc}% → ${a.charging.end_soc ?? "?"}%` : "";
-  if (a.halt) return `Off service${a.halt.start_soc !== null ? ` · SOC ${a.halt.start_soc}% → ${a.halt.end_soc ?? "?"}%` : ""}`;
-  if (a.layover) return `${label(a.layover.layover_purpose)}${a.layover.start_soc !== null ? ` · SOC ${a.layover.start_soc}% → ${a.layover.end_soc ?? "?"}%` : ""}`;
-  return "";
+  const soc = socText(a.trip || a.movement || a.charging || a.halt || a.layover);
+  const parts = [];
+  if (a.trip) parts.push(`${a.trip.trip_number} · ${a.trip.route_code} ${dirLabel(a.trip)}`);
+  else if (a.movement) parts.push(`${label(a.movement.movement_purpose)} · ${label(a.movement.payability_status)}`);
+  else if (a.halt) parts.push("Off service");
+  else if (a.layover) parts.push(label(a.layover.layover_purpose));
+  if (soc) parts.push(soc);
+  return parts.join(" · ");
 }
 
 export default function ScheduleViewer() {

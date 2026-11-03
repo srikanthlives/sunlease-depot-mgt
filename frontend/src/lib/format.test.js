@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fmtDate, parseDate, parseTime, fmtDuration, relMin, fmtRel, dirLabel } from "./format.js";
+import { fmtDate, parseDate, parseTime, fmtDuration, relMin, fmtRel, dirLabel, socText } from "./format.js";
 
 const now = new Date(2026, 9, 21); // 21-Oct-2026
 
@@ -58,4 +58,14 @@ test("a direction reads as its code then its display name", () => {
   assert.equal(dirLabel({ direction_code: "DOWNSTREAM" }), "DOWNSTREAM");   // name missing
   assert.equal(dirLabel({ direction_name: "Airport to City Centre" }), "Airport to City Centre");
   assert.equal(dirLabel(undefined), "");
+});
+
+test("SOC reads start, end and the change", () => {
+  assert.equal(socText({ planned_start_soc_pct: 80, planned_end_soc_pct: 72 }), "SOC 80% → 72% (-8)");
+  assert.equal(socText({ start_soc: 40, end_soc: 90 }), "SOC 40% → 90% (+50)");   // published payload
+  assert.equal(socText({ start_soc: 55, end_soc: 55 }), "SOC 55% → 55% (0)");
+  assert.equal(socText({ planned_start_soc_pct: 0, planned_end_soc_pct: 10 }), "SOC 0% → 10% (+10)");
+  assert.equal(socText({ start_soc: 60, end_soc: null }), "SOC 60% → ?");         // end not planned yet
+  assert.equal(socText({ start_soc: null }), "");
+  assert.equal(socText(undefined), "");
 });

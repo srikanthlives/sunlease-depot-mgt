@@ -157,5 +157,18 @@ export const LABELS = {
 export const label = (v) => LABELS[v] || v;
 /** A trip's direction as shown to the user: the code it is known by, then its display name.
  *  Either part may be missing on an older payload, so both are optional. */
+/** Planned SOC across one activity: where it starts, where it ends and the change.
+ *  Accepts either payload spelling (`planned_start_soc_pct` in the builder, `start_soc` in the
+ *  published view) and returns "" when no SOC was planned. */
+export function socText(d) {
+  if (!d) return "";
+  const start = d.planned_start_soc_pct ?? d.start_soc;
+  const end = d.planned_end_soc_pct ?? d.end_soc;
+  if (start === null || start === undefined || start === "") return "";
+  if (end === null || end === undefined || end === "") return `SOC ${Number(start)}% → ?`;
+  const delta = Math.round((Number(end) - Number(start)) * 100) / 100;
+  return `SOC ${Number(start)}% → ${Number(end)}% (${delta > 0 ? "+" : ""}${delta})`;
+}
+
 export const dirLabel = (t) => [t?.direction_code, t?.direction_name].filter(Boolean).join(" · ");
 export const options = (values) => values.map((v) => ({ value: v, label: label(v) }));

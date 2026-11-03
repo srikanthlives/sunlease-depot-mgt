@@ -16,7 +16,7 @@ import SummaryTiles from "../components/viz/SummaryTiles";
 import BusUsage from "../components/viz/BusUsage";
 import CrewCard from "../components/CrewCard";
 import { TYPE_COLOR } from "../components/viz/colors";
-import { addDays, dirLabel, fmtDate, fmtDuration, fmtRel, label, todayIso } from "../lib/format";
+import { addDays, dirLabel, fmtDate, fmtDuration, fmtRel, label, socText, todayIso } from "../lib/format";
 import { useApi } from "../lib/useApi";
 
 const ADD = [
@@ -28,12 +28,15 @@ const ADD = [
 ];
 
 function detailText(a) {
-  if (a.trip) return `${a.trip.trip_number} · ${a.trip.route_code} ${dirLabel(a.trip)} · ${a.trip.stops.length} stops`;
-  if (a.movement) return `${label(a.movement.movement_purpose)}`;
-  if (a.charging) return a.charging.planned_start_soc_pct !== null && a.charging.planned_end_soc_pct !== null ? `SOC ${Number(a.charging.planned_start_soc_pct)}% → ${Number(a.charging.planned_end_soc_pct)}%` : "Charging session";
-  if (a.halt) return a.halt.planned_start_soc_pct !== null && a.halt.planned_end_soc_pct !== null ? `Off service · SOC ${Number(a.halt.planned_start_soc_pct)}% → ${Number(a.halt.planned_end_soc_pct)}%` : "Off service";
-  if (a.layover) return a.layover.planned_start_soc_pct !== null && a.layover.planned_end_soc_pct !== null ? `${label(a.layover.layover_purpose)} · SOC ${Number(a.layover.planned_start_soc_pct)}% → ${Number(a.layover.planned_end_soc_pct)}%` : label(a.layover.layover_purpose);
-  return "";
+  const soc = socText(a.trip || a.movement || a.charging || a.halt || a.layover);
+  const parts = [];
+  if (a.trip) parts.push(`${a.trip.trip_number} · ${a.trip.route_code} ${dirLabel(a.trip)} · ${a.trip.stops.length} stops`);
+  else if (a.movement) parts.push(label(a.movement.movement_purpose));
+  else if (a.charging) { if (!soc) parts.push("Charging session"); }
+  else if (a.halt) parts.push("Off service");
+  else if (a.layover) parts.push(label(a.layover.layover_purpose));
+  if (soc) parts.push(soc);
+  return parts.join(" · ");
 }
 
 function IssueList({ result, onPick }) {
