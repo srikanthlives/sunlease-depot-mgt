@@ -6,20 +6,19 @@ import { Badge, Button, Card, Empty, PageHeader, Spinner } from "../components/u
 import { Combobox, DateInput, Select, TextInput } from "../components/inputs";
 import ScheduleGantt from "../components/viz/ScheduleGantt";
 import { TYPE_COLOR } from "../components/viz/colors";
-import { dirLabel, fmtDate, fmtDateLong, fmtDuration, label, options, socText, todayIso } from "../lib/format";
+import SocCell, { SocTotals } from "../components/SocCell";
+import { dirLabel, fmtDate, fmtDateLong, fmtDuration, km2, label, options, todayIso } from "../lib/format";
 import { locOptions, useApi } from "../lib/useApi";
 
 const TYPES = ["PASSENGER_TRIP", "NON_REVENUE_MOVEMENT", "CHARGING", "LAYOVER", "HALT"];
 
 function detail(a) {
-  const soc = socText(a.trip || a.movement || a.charging || a.halt || a.layover);
-  const parts = [];
-  if (a.trip) parts.push(`${a.trip.trip_number} · ${a.trip.route_code} ${dirLabel(a.trip)}`);
-  else if (a.movement) parts.push(`${label(a.movement.movement_purpose)} · ${label(a.movement.payability_status)}`);
-  else if (a.halt) parts.push("Off service");
-  else if (a.layover) parts.push(label(a.layover.layover_purpose));
-  if (soc) parts.push(soc);
-  return parts.join(" · ");
+  if (a.trip) return `${a.trip.trip_number} · ${a.trip.route_code} ${dirLabel(a.trip)}`;
+  if (a.movement) return `${label(a.movement.movement_purpose)} · ${label(a.movement.payability_status)}`;
+  if (a.charging) return "Charging session";
+  if (a.halt) return "Off service";
+  if (a.layover) return label(a.layover.layover_purpose);
+  return "";
 }
 
 export default function ScheduleViewer() {
@@ -88,7 +87,7 @@ export default function ScheduleViewer() {
                   <table className="w-full text-sm">
                     <thead><tr className="border-b border-slate-200 text-left text-[11px] uppercase tracking-wide text-slate-500">
                       <th className="px-2 py-1.5">#</th><th className="px-2 py-1.5">Activity</th><th className="px-2 py-1.5">From → To</th>
-                      <th className="px-2 py-1.5">Start</th><th className="px-2 py-1.5">End</th><th className="px-2 py-1.5 text-right">Duration</th><th className="px-2 py-1.5 text-right">km</th><th className="px-2 py-1.5">Details</th></tr></thead>
+                      <th className="px-2 py-1.5">Start</th><th className="px-2 py-1.5">End</th><th className="px-2 py-1.5 text-right">Duration</th><th className="px-2 py-1.5 text-right">km</th><th className="px-2 py-1.5">SOC</th><th className="px-2 py-1.5">Details</th></tr></thead>
                     <tbody>
                       {t.rows.map((a) => (
                         <tr key={a.activity_id} className="border-b border-slate-100">
@@ -99,10 +98,19 @@ export default function ScheduleViewer() {
                           <td className="px-2 py-1.5 tabular-nums whitespace-nowrap">{fmtDate(a.end_date)} {a.end_time} {a.end_date !== a.start_date && <Moon className="inline h-3.5 w-3.5 text-brand-600" />}</td>
                           <td className="px-2 py-1.5 text-right tabular-nums">{fmtDuration(a.duration_minutes)}</td>
                           <td className="px-2 py-1.5 text-right tabular-nums">{a.distance_km || ""}</td>
+                          <td className="px-2 py-1.5 text-xs"><SocCell of={a.trip || a.movement || a.charging || a.halt || a.layover} /></td>
                           <td className="px-2 py-1.5 text-xs text-slate-600">{detail(a)}</td>
                         </tr>
                       ))}
                     </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-slate-200 bg-slate-50 text-xs font-medium">
+                        <td colSpan={6} className="px-2 py-1.5 text-right uppercase tracking-wide text-slate-500">Cycle total</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{km2(t.rows.reduce((n, a) => n + Number(a.distance_km || 0), 0))}</td>
+                        <td className="px-2 py-1.5"><SocTotals activities={t.rows} /></td>
+                        <td />
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
               )}

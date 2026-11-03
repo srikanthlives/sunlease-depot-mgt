@@ -13,10 +13,11 @@ import ActivityEditor, { newActivity, toEditor } from "../components/ActivityEdi
 import ScheduleGantt from "../components/viz/ScheduleGantt";
 import SocProfile from "../components/viz/SocProfile";
 import SummaryTiles from "../components/viz/SummaryTiles";
+import SocCell, { SocTotals } from "../components/SocCell";
 import BusUsage from "../components/viz/BusUsage";
 import CrewCard from "../components/CrewCard";
 import { TYPE_COLOR } from "../components/viz/colors";
-import { addDays, dirLabel, fmtDate, fmtDuration, fmtRel, label, socText, todayIso } from "../lib/format";
+import { addDays, dirLabel, fmtDate, fmtDuration, fmtRel, km2, label, todayIso } from "../lib/format";
 import { useApi } from "../lib/useApi";
 
 const ADD = [
@@ -28,15 +29,12 @@ const ADD = [
 ];
 
 function detailText(a) {
-  const soc = socText(a.trip || a.movement || a.charging || a.halt || a.layover);
-  const parts = [];
-  if (a.trip) parts.push(`${a.trip.trip_number} · ${a.trip.route_code} ${dirLabel(a.trip)} · ${a.trip.stops.length} stops`);
-  else if (a.movement) parts.push(label(a.movement.movement_purpose));
-  else if (a.charging) { if (!soc) parts.push("Charging session"); }
-  else if (a.halt) parts.push("Off service");
-  else if (a.layover) parts.push(label(a.layover.layover_purpose));
-  if (soc) parts.push(soc);
-  return parts.join(" · ");
+  if (a.trip) return `${a.trip.trip_number} · ${a.trip.route_code} ${dirLabel(a.trip)} · ${a.trip.stops.length} stops`;
+  if (a.movement) return label(a.movement.movement_purpose);
+  if (a.charging) return "Charging session";
+  if (a.halt) return "Off service";
+  if (a.layover) return label(a.layover.layover_purpose);
+  return "";
 }
 
 function IssueList({ result, onPick }) {
@@ -313,12 +311,12 @@ export default function ScheduleBuilder() {
                 <tr className="border-b border-slate-200 text-left text-[11px] uppercase tracking-wide text-slate-500">
                   <th className="w-10 px-3 py-2">#</th><th className="px-2 py-2">Type</th><th className="px-2 py-2">From → To</th>
                   <th className="px-2 py-2">Start</th><th className="px-2 py-2">End</th><th className="px-2 py-2 text-right">Duration</th>
-                  <th className="px-2 py-2 text-right">km</th><th className="px-2 py-2">Details</th><th className="px-2 py-2" /><th className="w-32" />
+                  <th className="px-2 py-2 text-right">km</th><th className="px-2 py-2">SOC</th><th className="px-2 py-2">Details</th><th className="px-2 py-2" /><th className="w-32" />
                 </tr>
               </thead>
               <tbody>
                 {acts.length === 0 && (
-                  <tr><td colSpan={10} className="px-4 py-10 text-center text-sm text-slate-400">
+                  <tr><td colSpan={11} className="px-4 py-10 text-center text-sm text-slate-400">
                     {canEdit ? <>Start with the first movement out of the depot: press <kbd className="rounded border px-1">Alt+M</kbd>, or <kbd className="rounded border px-1">Alt+T</kbd> for a passenger trip.</> : "No activities"}
                   </td></tr>
                 )}
@@ -330,7 +328,7 @@ export default function ScheduleBuilder() {
                     <Fragment key={a.activity_id}>
                       {between.map((b, k) => (
                         <tr key={k}>
-                          <td colSpan={10} className={`px-3 py-1 text-[11px] font-medium ${b.kind === "day" ? "bg-ink/5 text-ink" : b.kind === "overlap" ? "bg-danger/10 text-danger" : b.kind === "gap" ? "bg-warn/15 text-[#8a5a00]" : "text-slate-400"}`}>
+                          <td colSpan={11} className={`px-3 py-1 text-[11px] font-medium ${b.kind === "day" ? "bg-ink/5 text-ink" : b.kind === "overlap" ? "bg-danger/10 text-danger" : b.kind === "gap" ? "bg-warn/15 text-[#8a5a00]" : "text-slate-400"}`}>
                             {b.kind === "day" && <span className="inline-flex items-center gap-1"><Moon className="h-3.5 w-3.5" /> Day {b.day + 1} · {fmtDate(addDays(version.valid_from, b.day))}</span>}
                             {b.kind === "overlap" && <span className="inline-flex items-center gap-1"><AlertOctagon className="h-3.5 w-3.5" /> Overlap {fmtDuration(b.min)}</span>}
                             {b.kind === "gap" && <span className="inline-flex items-center gap-1"><AlertTriangle className="h-3.5 w-3.5" /> Unexplained gap {fmtDuration(b.min)} - add a layover?</span>}
@@ -357,6 +355,7 @@ export default function ScheduleBuilder() {
                         <td className="px-2 py-2 tabular-nums whitespace-nowrap">{fmtRel(a.end_min)} {crosses && <Moon className="inline h-3.5 w-3.5 text-brand-600" aria-label="crosses midnight" />}</td>
                         <td className="px-2 py-2 text-right tabular-nums">{fmtDuration(a.end_min - a.start_min)}</td>
                         <td className="px-2 py-2 text-right tabular-nums">{a.distance_km ? a.distance_km : ""}</td>
+                        <td className="px-2 py-2 text-xs"><SocCell of={a.trip || a.movement || a.charging || a.halt || a.layover} /></td>
                         <td className="px-2 py-2 text-xs text-slate-600">{detailText(a)}</td>
                         <td className="px-2 py-2">{a.movement && <Badge value={a.movement.payability_status} />}
                           {iss.length > 0 && <span className={`ml-1 inline-flex items-center gap-0.5 text-[11px] ${hasErr ? "text-danger" : "text-[#8a5a00]"}`} title={iss.map((i) => i.message).join("\n")}>
@@ -376,6 +375,16 @@ export default function ScheduleBuilder() {
                   );
                 })}
               </tbody>
+              {acts.length > 0 && (
+                <tfoot>
+                  <tr className="border-t-2 border-slate-200 bg-slate-50 text-xs font-medium">
+                    <td colSpan={6} className="px-3 py-2 text-right uppercase tracking-wide text-slate-500">Cycle total</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{km2(acts.reduce((n, a) => n + Number(a.distance_km || 0), 0))}</td>
+                    <td className="px-2 py-2"><SocTotals activities={acts} /></td>
+                    <td colSpan={3} />
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
           {acts.length > 0 && <p className="border-t border-slate-100 px-4 py-2 text-[11px] text-slate-400">↑↓ move between rows · Enter edit · Alt+↑/↓ reorder · Delete remove · Alt+V validate{can("PUBLISHER") ? " · Alt+P publish" : ""}</p>}

@@ -129,6 +129,8 @@ export function fmtRel(min) {
 }
 
 export const fmtKm = (v) => (v === null || v === undefined || v === "" ? "" : `${Number(v).toLocaleString("en-IN", { maximumFractionDigits: 2 })} km`);
+/** Distance with two decimals, as the schedule summaries show it. */
+export const km2 = (v) => `${Number(v || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} km`;
 export const num = (v) => (v === null || v === undefined || v === "" ? null : Number(v));
 
 export const LABELS = {
@@ -157,17 +159,17 @@ export const LABELS = {
 export const label = (v) => LABELS[v] || v;
 /** A trip's direction as shown to the user: the code it is known by, then its display name.
  *  Either part may be missing on an older payload, so both are optional. */
-/** Planned SOC across one activity: where it starts, where it ends and the change.
- *  Accepts either payload spelling (`planned_start_soc_pct` in the builder, `start_soc` in the
- *  published view) and returns "" when no SOC was planned. */
-export function socText(d) {
-  if (!d) return "";
+/** Planned SOC across one activity: `{start, end, delta}` in SOC points, or null when none was
+ *  planned. Accepts either payload spelling (`planned_start_soc_pct` in the builder, `start_soc`
+ *  in the published view). `end`/`delta` are null when only a start SOC is planned. */
+export function soc(d) {
+  if (!d) return null;
   const start = d.planned_start_soc_pct ?? d.start_soc;
   const end = d.planned_end_soc_pct ?? d.end_soc;
-  if (start === null || start === undefined || start === "") return "";
-  if (end === null || end === undefined || end === "") return `SOC ${Number(start)}% → ?`;
-  const delta = Math.round((Number(end) - Number(start)) * 100) / 100;
-  return `SOC ${Number(start)}% → ${Number(end)}% (${delta > 0 ? "+" : ""}${delta})`;
+  if (start === null || start === undefined || start === "") return null;
+  if (end === null || end === undefined || end === "") return { start: Number(start), end: null, delta: null };
+  return { start: Number(start), end: Number(end),
+           delta: Math.round((Number(end) - Number(start)) * 100) / 100 };
 }
 
 export const dirLabel = (t) => [t?.direction_code, t?.direction_name].filter(Boolean).join(" · ");

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fmtDate, parseDate, parseTime, fmtDuration, relMin, fmtRel, dirLabel, socText } from "./format.js";
+import { fmtDate, parseDate, parseTime, fmtDuration, relMin, fmtRel, dirLabel, soc, km2 } from "./format.js";
 
 const now = new Date(2026, 9, 21); // 21-Oct-2026
 
@@ -60,12 +60,18 @@ test("a direction reads as its code then its display name", () => {
   assert.equal(dirLabel(undefined), "");
 });
 
-test("SOC reads start, end and the change", () => {
-  assert.equal(socText({ planned_start_soc_pct: 80, planned_end_soc_pct: 72 }), "SOC 80% → 72% (-8)");
-  assert.equal(socText({ start_soc: 40, end_soc: 90 }), "SOC 40% → 90% (+50)");   // published payload
-  assert.equal(socText({ start_soc: 55, end_soc: 55 }), "SOC 55% → 55% (0)");
-  assert.equal(socText({ planned_start_soc_pct: 0, planned_end_soc_pct: 10 }), "SOC 0% → 10% (+10)");
-  assert.equal(socText({ start_soc: 60, end_soc: null }), "SOC 60% → ?");         // end not planned yet
-  assert.equal(socText({ start_soc: null }), "");
-  assert.equal(socText(undefined), "");
+test("SOC parses start, end and the change in SOC points", () => {
+  assert.deepEqual(soc({ planned_start_soc_pct: 80, planned_end_soc_pct: 72 }), { start: 80, end: 72, delta: -8 });
+  assert.deepEqual(soc({ start_soc: 40, end_soc: 90 }), { start: 40, end: 90, delta: 50 });  // published payload
+  assert.deepEqual(soc({ start_soc: 55, end_soc: 55 }), { start: 55, end: 55, delta: 0 });   // no triangle
+  assert.deepEqual(soc({ planned_start_soc_pct: 0, planned_end_soc_pct: 10 }), { start: 0, end: 10, delta: 10 });
+  assert.deepEqual(soc({ start_soc: 60, end_soc: null }), { start: 60, end: null, delta: null });
+  assert.equal(soc({ start_soc: null }), null);
+  assert.equal(soc(undefined), null);
+});
+
+test("km always carries two decimals", () => {
+  assert.equal(km2(10), "10.00 km");
+  assert.equal(km2(10.456), "10.46 km");
+  assert.equal(km2(null), "0.00 km");
 });

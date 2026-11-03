@@ -1,5 +1,5 @@
 import { BatteryCharging, Clock, Gauge, Hourglass, IndianRupee, Route, Sun, Moon, Timer } from "lucide-react";
-import { fmtDuration, fmtRel } from "../../lib/format";
+import { fmtDuration, fmtRel, km2 as km } from "../../lib/format";
 import { TYPE_COLOR } from "./colors";
 
 function Tile({ icon: Icon, label, value, sub, swatch, title }) {
@@ -13,9 +13,6 @@ function Tile({ icon: Icon, label, value, sub, swatch, title }) {
     </div>
   );
 }
-
-/** Summary distances always carry two decimals, so the tiles line up and a part km is never hidden. */
-const km = (v) => `${Number(v || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} km`;
 
 /** Non-revenue km split by payability (set per movement, independent of revenue). */
 function payableSub(s) {
