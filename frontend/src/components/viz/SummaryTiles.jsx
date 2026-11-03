@@ -14,10 +14,12 @@ function Tile({ icon: Icon, label, value, sub, swatch, title }) {
   );
 }
 
+/** Summary distances always carry two decimals, so the tiles line up and a part km is never hidden. */
+const km = (v) => `${Number(v || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} km`;
+
 /** Non-revenue km split by payability (set per movement, independent of revenue). */
 function payableSub(s) {
   const p = s.non_revenue_km_by_payability || {};
-  const km = (v) => `${Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 1 })} km`;
   if (!s.non_revenue_km) return fmtDuration(s.minutes_by_type?.NON_REVENUE_MOVEMENT) || "0m";
   const parts = [`${km(p.PAYABLE)} payable`];
   if (p.NON_PAYABLE) parts.push(`${km(p.NON_PAYABLE)} non-payable`);
@@ -28,7 +30,6 @@ function payableSub(s) {
 export default function SummaryTiles({ summary }) {
   if (!summary) return null;
   const s = summary;
-  const km = (v) => `${Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 1 })} km`;
   const revPct = s.total_km ? Math.round((s.revenue_km / s.total_km) * 100) : 0;
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5 2xl:grid-cols-9">
