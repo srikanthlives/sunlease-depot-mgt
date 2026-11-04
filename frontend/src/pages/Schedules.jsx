@@ -5,7 +5,7 @@ import client, { apiErrorMessage } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import { Badge, Button, Card, Empty, IconButton, Modal, PageHeader, Table } from "../components/ui";
-import { Combobox, DateInput, TextInput } from "../components/inputs";
+import { Combobox, DateInput, Select, TextInput } from "../components/inputs";
 import { fmtDate, todayIso } from "../lib/format";
 import { useApi } from "../lib/useApi";
 
@@ -27,11 +27,25 @@ export default function Schedules() {
   const toast = useToast();
   const { data = [], reload } = useApi("/schedules", []);
   const { data: vehicles = [] } = useApi("/vehicles", []);
-  const [q, setQ] = useState("");
+  const [f, setF] = useState({ code: "", name: "", bus: "" });
+  const [sort, setSort] = useState({ key: "schedule_code", dir: "asc" });
   const [form, setForm] = useState(null);         // new schedule, or (with source) a copy of one
   const [errors, setErrors] = useState({});
   const cloning = !!form?.source;
-  const rows = useMemo(() => (data || []).filter((s) => !q || `${s.schedule_code} ${s.schedule_name} ${s.fleet_number}`.toLowerCase().includes(q.toLowerCase())), [data, q]);
+  const has = (value, text) => (value || "").toLowerCase().includes(text.trim().toLowerCase());
+  const rows = useMemo(() => {
+    const out = (data || []).filter((s) => (!f.code || has(s.schedule_code, f.code))
+      && (!f.name || has(s.schedule_name, f.name))
+      && (!f.bus || s.fleet_number === f.bus));
+    const dir = sort.dir === "asc" ? 1 : -1;
+    // Code, name and bus all sort as text; a missing bus sorts last either way.
+    return out.sort((a, b) => String(a[sort.key] ?? "").localeCompare(String(b[sort.key] ?? ""),
+      undefined, { numeric: true, sensitivity: "base" }) * dir);
+  }, [data, f, sort]);
+  /** Only buses that actually carry a schedule, so the filter never offers an empty result. */
+  const busFilterOpts = useMemo(() => [...new Set((data || []).map((s) => s.fleet_number).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+    .map((n) => ({ value: n, label: n })), [data]);
   const busOpts = (vehicles || []).filter((v) => v.status === "ACTIVE").map((v) => ({ value: v.vehicle_id, label: v.fleet_number, sub: v.assigned_schedules.length ? `in ${v.assigned_schedules.join(", ")}` : "free" }));
   const save = async () => {
     const e = {};
@@ -79,13 +93,25 @@ export default function Schedules() {
     <>
       <PageHeader title="Fixed bus schedules" subtitle="Recurring daily operating cycles, one physical bus each"
         actions={can("SCHEDULER") && <Button icon={Plus} onClick={() => { setErrors({}); setForm({ schedule_code: "", schedule_name: "", vehicle_id: null, effective_from: todayIso(), effective_to: null, timezone: "Asia/Kolkata", recurrence_type: "DAILY" }); }}>New schedule</Button>} />
-      <Card title={`${rows.length} schedules`} padded={false} actions={<TextInput placeholder="Search code, name, bus" value={q} onChange={(e) => setQ(e.target.value)} className="w-64" />}>
+      <Card title={`${rows.length} of ${(data || []).length} schedules`} padded={false}
+        actions={(
+          <span className="flex flex-wrap items-center gap-2">
+            <TextInput placeholder="Code" value={f.code} onChange={(e) => setF({ ...f, code: e.target.value })} className="w-32" />
+            <TextInput placeholder="Name" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} className="w-44" />
+            <Select options={busFilterOpts} value={f.bus} onChange={(v) => setF({ ...f, bus: v || "" })}
+              placeholder="Any bus" className="w-36" />
+            {(f.code || f.name || f.bus) && (
+              <Button variant="secondary" size="sm" onClick={() => setF({ code: "", name: "", bus: "" })}>Clear</Button>
+            )}
+          </span>
+        )}>
         {(data || []).length === 0 ? <Empty icon={CalendarClock} title="No schedules yet">Create one and assign it to a bus.</Empty> : (
-          <Table rowKey={(r) => r.schedule_id} rows={rows} onRowClick={(r) => nav(`/schedules/${r.schedule_id}`)} columns={[
-            { key: "schedule_code", title: "Code", className: "font-medium" },
-            { key: "schedule_name", title: "Name" },
+          <Table rowKey={(r) => r.schedule_id} rows={rows} onRowClick={(r) => nav(`/schedules/${r.schedule_id}`)}
+            sort={sort} onSortChange={setSort} columns={[
+            { key: "schedule_code", title: "Code", className: "font-medium", sortable: true },
+            { key: "schedule_name", title: "Name", sortable: true },
             ...(isAll ? [{ key: "cc", title: "Cost center", render: (r) => ccCode(r.cost_center_id) }] : []),
-            { key: "fleet_number", title: "Bus" },
+            { key: "fleet_number", title: "Bus", sortable: true },
             { key: "eff", title: "Effective", className: "tabular-nums whitespace-nowrap", render: (r) => `${fmtDate(r.effective_from)} → ${r.effective_to ? fmtDate(r.effective_to) : "open"}` },
             { key: "versions", title: "Versions", render: (r) => <Validity versions={r.versions} /> },
             { key: "status", title: "Status", render: (r) => <Badge value={r.status} /> },

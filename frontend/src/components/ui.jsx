@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Loader2, Keyboard } from "lucide-react";
+import { X, Loader2, Keyboard, ChevronUp, ChevronDown } from "lucide-react";
 import clsx from "clsx";
 import { focusFirst, useFormKeys } from "../lib/keys";
 import { label } from "../lib/format";
@@ -133,14 +133,36 @@ export function Spinner() {
   return <div className="flex justify-center py-10"><Loader2 className="h-6 w-6 animate-spin text-brand-500" /></div>;
 }
 
-/** `rowClassName(row)` tints a row, e.g. a record that failed validation. */
-export function Table({ columns, rows, onRowClick, empty = "No records", rowKey, rowClassName }) {
+/** `rowClassName(row)` tints a row, e.g. a record that failed validation.
+ *  Sorting is opt-in: mark a column `sortable` and pass `sort` ({key, dir}) with
+ *  `onSortChange`. The caller still owns the ordering of `rows` - this only renders
+ *  the header affordance and reports the clicks, so a page can sort server-side too. */
+export function Table({ columns, rows, onRowClick, empty = "No records", rowKey, rowClassName,
+                        sort, onSortChange }) {
+  const clickSort = (key) => {
+    if (!onSortChange) return;
+    onSortChange(sort?.key === key ? { key, dir: sort.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
+  };
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
-            {columns.map((c) => <th key={c.key} className={clsx("px-3 py-2 font-medium", c.className)}>{c.title}</th>)}
+            {columns.map((c) => (
+              <th key={c.key} className={clsx("px-3 py-2 font-medium", c.className)}
+                aria-sort={c.sortable && sort?.key === c.key ? (sort.dir === "asc" ? "ascending" : "descending") : undefined}>
+                {c.sortable && onSortChange ? (
+                  <button type="button" onClick={() => clickSort(c.key)}
+                    title={`Sort by ${typeof c.title === "string" ? c.title.toLowerCase() : c.key}`}
+                    className="inline-flex items-center gap-0.5 uppercase tracking-wide hover:text-ink">
+                    {c.title}
+                    {sort?.key === c.key
+                      ? (sort.dir === "asc" ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />)
+                      : <ChevronUp className="h-3.5 w-3.5 text-slate-300" />}
+                  </button>
+                ) : c.title}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
