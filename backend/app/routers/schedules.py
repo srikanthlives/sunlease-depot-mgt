@@ -247,6 +247,31 @@ def update_schedule(schedule_id: int, body: S.ScheduleUpdate, db: Session = Depe
     data = body.model_dump(exclude_unset=True)
     if data.get("status") == "RETIRED" and sc.rank(s.cost_center_id) < Role.RANK[Role.PUBLISHER]:
         raise HTTPException(403, "Only a publisher can retire a schedule")
+    if data.get("vehicle_id") and data["vehicle_id"] != s.vehicle_id:
+        # Trip sheets are recorded against the schedule, so the bus they ran on is read through
+        # it: repointing a schedule that has already operated would rewrite which bus ran those
+        # days. Copy the schedule onto the other bus instead (see /clone).
+        last = svc.last_trip_sheet_date(db, schedule_id)
+        if last:
+            raise HTTPException(409, f"Trip sheets exist up to {last.isoformat()} - the bus cannot be changed "
+                                     "once a schedule has operated. Copy it onto the other bus instead.")
+        live = [v for v in s.versions if v.status != VersionStatus.DRAFT]
+        if live:
+            # A published version is a commitment crews work to, and bus clashes between
+            # schedules are only computed when a version is validated or published - so moving
+            # a live schedule to another bus could create an overlap nothing would catch.
+            v = max(live, key=lambda x: x.version_number)
+            raise HTTPException(409, f"v{v.version_number} is published - unpublish it first, or copy the schedule "
+                                     "onto the other bus as a new draft.")
+        vehicle = db.get(Vehicle, data["vehicle_id"])
+        if not vehicle or vehicle.cost_center_id != s.cost_center_id:
+            raise HTTPException(422, "Vehicle does not exist in this cost center")
+        if vehicle.status != "ACTIVE":
+            raise HTTPException(422, "Vehicle is not active")
+        data_vehicle = {"from": s.vehicle.fleet_number, "to": vehicle.fleet_number}
+    else:
+        data.pop("vehicle_id", None)
+        data_vehicle = None
     if data.get("effective_from"):
         try:
             svc.change_effective_from(db, s, data.pop("effective_from"))
@@ -266,6 +291,8 @@ def update_schedule(schedule_id: int, body: S.ScheduleUpdate, db: Session = Depe
     for k, v in data.items():
         setattr(s, k, v)
     s.updated_by = user.id
+    if data_vehicle:
+        data_log = {**data_log, "bus": data_vehicle}
     audit_service.record(db, user, "UPDATE", "BusSchedule", schedule_id, data_log)
     db.commit()
     return _schedule_out(s)

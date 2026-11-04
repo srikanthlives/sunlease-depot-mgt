@@ -440,6 +440,7 @@ class ScheduleIn(BaseModel):
 
 class ScheduleUpdate(BaseModel):
     schedule_name: Optional[str] = None
+    vehicle_id: Optional[int] = None
     effective_from: Optional[dt.date] = None
     effective_to: Optional[dt.date] = None
     status: Optional[Literal["RETIRED"]] = None

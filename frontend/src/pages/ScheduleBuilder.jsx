@@ -8,7 +8,7 @@ import client, { apiErrorMessage } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import { Badge, Button, Card, IconButton, Modal, PageHeader, Spinner } from "../components/ui";
-import { Checkbox, DateInput, TextArea, TextInput } from "../components/inputs";
+import { Checkbox, Combobox, DateInput, TextArea, TextInput } from "../components/inputs";
 import ActivityEditor, { newActivity, toEditor } from "../components/ActivityEditor";
 import ScheduleGantt from "../components/viz/ScheduleGantt";
 import SocProfile from "../components/viz/SocProfile";
@@ -75,6 +75,7 @@ export default function ScheduleBuilder() {
   const can = (role) => !!schedule && canIn(schedule.cost_center_id, role);
   const { data: allLocs = [] } = useApi("/locations", []);
   const { data: allRoutes = [] } = useApi("/routes", []);
+  const { data: vehicles = [] } = useApi("/vehicles", []);
   const routes = (allRoutes || []).filter((r) => !schedule || r.cost_center_id === schedule.cost_center_id);
   const company = schedule ? companyOf(schedule.cost_center_id) : null;
   const locs = (allLocs || []).filter((l) => company === null || l.company_id === company);
@@ -252,7 +253,7 @@ export default function ScheduleBuilder() {
           <Badge value={schedule.status} />
         </span>}
         actions={<>
-          {can("SCHEDULER") && <Button variant="ghost" size="sm" icon={Pencil} onClick={() => setHeaderForm({ schedule_name: schedule.schedule_name, effective_from: schedule.effective_from, effective_to: schedule.effective_to })}>Edit header</Button>}
+          {can("SCHEDULER") && <Button variant="ghost" size="sm" icon={Pencil} onClick={() => setHeaderForm({ schedule_name: schedule.schedule_name, vehicle_id: schedule.vehicle_id, effective_from: schedule.effective_from, effective_to: schedule.effective_to })}>Edit header</Button>}
           <Button variant="secondary" icon={Printer} onClick={() => window.open(`/print/${vid}`, "_blank")}>Print</Button>
           <Button variant="secondary" icon={ShieldCheck} onClick={() => validate()} title="Alt+V">Validate</Button>
           {isDraft && can("PUBLISHER") && <Button variant="success" icon={Send} onClick={openPublish} title="Alt+P">Publish…</Button>}
@@ -437,6 +438,16 @@ export default function ScheduleBuilder() {
         {headerForm && (
           <div className="space-y-3">
             <TextInput label="Schedule name" value={headerForm.schedule_name} onChange={(e) => setHeaderForm({ ...headerForm, schedule_name: e.target.value })} />
+            <Combobox label="Bus" required value={headerForm.vehicle_id}
+              onChange={(v) => setHeaderForm({ ...headerForm, vehicle_id: v })}
+              placeholder="Type fleet number"
+              options={(vehicles || []).filter((v) => v.status === "ACTIVE" || v.vehicle_id === schedule.vehicle_id)
+                .map((v) => ({ value: v.vehicle_id, label: v.fleet_number,
+                               sub: v.vehicle_id === schedule.vehicle_id ? "current"
+                                 : v.assigned_schedules.length ? `in ${v.assigned_schedules.join(", ")}` : "free" }))} />
+            <p className="-mt-1 text-xs text-slate-500">Moving the schedule to another bus is refused once trip sheets
+              exist for it - the bus that ran those days is read through the schedule. Copy it onto the other bus
+              instead. A clash with another schedule on the same bus is reported when you validate or publish.</p>
             <div className="grid grid-cols-2 gap-3">
               <DateInput label="Effective from" required value={headerForm.effective_from} onChange={(v) => setHeaderForm({ ...headerForm, effective_from: v })} />
               <DateInput label="Effective to (blank = open-ended)" value={headerForm.effective_to} base={headerForm.effective_from} onChange={(v) => setHeaderForm({ ...headerForm, effective_to: v })} />

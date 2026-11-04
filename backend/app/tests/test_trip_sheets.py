@@ -338,3 +338,17 @@ def test_bus_change_checks(world):
     c.put(f"/api/trip-sheets/{sheet['sheet_id']}", json=body, headers=h)
     codes = {i["code"] for i in c.post(f"/api/trip-sheets/{sheet['sheet_id']}/validate", headers=h).json()["issues"]}
     assert "BUS_CHANGE_SAME" in codes
+
+
+def test_the_bus_cannot_be_changed_once_the_schedule_has_operated(world):
+    """A schedule's trip sheets say which bus ran: repointing it would rewrite that history."""
+    s, _ = published(world)
+    new_sheet(world, s)                                  # the schedule has now operated once
+    r = world["client"].put(f"/api/schedules/{s['schedule_id']}",
+                            json={"vehicle_id": world["bus2"]["vehicle_id"]}, headers=world["h"])
+    assert r.status_code == 409
+    assert "Copy it onto the other bus instead" in r.text
+    # the bus is unchanged, and the rest of the header still edits normally
+    assert world["client"].get(f"/api/schedules/{s['schedule_id']}", headers=world["h"]).json()["fleet_number"] == "B1"
+    assert world["client"].put(f"/api/schedules/{s['schedule_id']}",
+                               json={"schedule_name": "Renamed"}, headers=world["h"]).status_code == 200

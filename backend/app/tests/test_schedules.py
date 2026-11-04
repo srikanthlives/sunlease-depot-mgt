@@ -573,3 +573,28 @@ def test_clone_copies_a_schedule_onto_another_bus_as_a_draft(world, client):
                        json={**body, "schedule_code": "S1-X", "vehicle_id": 9999}).status_code == 422
     # and the copy publishes on its own, like any draft
     assert client.post(f"/api/schedule-versions/{new_vid}/publish", json={}, headers=h).status_code == 200
+
+
+def test_the_bus_can_be_changed_until_the_schedule_has_operated(world):
+    """Edit header may move a schedule to another bus; once trip sheets exist it may not,
+    because the bus that ran those days is read through the schedule."""
+    from .conftest import make_schedule
+    c, h = world["client"], world["h"]
+    s, vid = make_schedule(world)
+    assert s["fleet_number"] == "B1"
+
+    # a draft can move to another active bus
+    r = c.put(f"/api/schedules/{s['schedule_id']}", json={"vehicle_id": world["bus2"]["vehicle_id"]}, headers=h)
+    assert r.status_code == 200 and r.json()["fleet_number"] == "B2"
+
+    # a bus outside this cost center, or one that is not active, is refused
+    assert c.put(f"/api/schedules/{s['schedule_id']}", json={"vehicle_id": 9999}, headers=h).status_code == 422
+    c.put(f"/api/vehicles/{world['bus']['vehicle_id']}",
+          json={**{k: world["bus"][k] for k in ("fleet_number", "registration_number", "home_depot_id")},
+                "status": "INACTIVE"}, headers=h)
+    r = c.put(f"/api/schedules/{s['schedule_id']}", json={"vehicle_id": world["bus"]["vehicle_id"]}, headers=h)
+    assert r.status_code == 422 and "not active" in r.text
+
+    # sending the bus it already has is a no-op, not an error
+    assert c.put(f"/api/schedules/{s['schedule_id']}",
+                 json={"vehicle_id": world["bus2"]["vehicle_id"]}, headers=h).status_code == 200
