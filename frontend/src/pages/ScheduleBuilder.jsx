@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
-  AlertOctagon, AlertTriangle, ArrowDown, ArrowUp, BatteryCharging, BusFront, CheckCircle2, ChevronLeft, CopyPlus, Lock,
+  AlertOctagon, AlertTriangle, ArrowDown, ArrowUp, BatteryCharging, BusFront, CheckCircle2, ChevronLeft, ChevronRight, CopyPlus, Lock,
   Moon, Pencil, Printer, Send, ShieldCheck, Trash2, Truck, Undo2, Users2, Hourglass, Warehouse, Wand2,
 } from "lucide-react";
 import client, { apiErrorMessage } from "../api/client";
@@ -76,6 +76,22 @@ export default function ScheduleBuilder() {
   const { data: allLocs = [] } = useApi("/locations", []);
   const { data: allRoutes = [] } = useApi("/routes", []);
   const { data: vehicles = [] } = useApi("/vehicles", []);
+  // Skimming: the list page hands over the ids in the order it was showing (its filters and
+  // sort included); on a direct link there is no such state, so fall back to every schedule
+  // of this cost center by code.
+  const { data: allSchedules = [] } = useApi("/schedules", []);
+  const handedOver = useLocation().state?.order;
+  const skim = useMemo(() => {
+    const ids = handedOver?.length ? handedOver
+      : [...(allSchedules || [])].sort((a, b) => String(a.schedule_code).localeCompare(String(b.schedule_code),
+        undefined, { numeric: true })).map((x) => x.schedule_id);
+    const at = ids.indexOf(Number(scheduleId));
+    return { ids, at, prev: at > 0 ? ids[at - 1] : null, next: at >= 0 && at < ids.length - 1 ? ids[at + 1] : null };
+  }, [handedOver, allSchedules, scheduleId]);
+  /** Keep the handed-over order while skimming, so the sequence stays the list's. */
+  const goTo = useCallback((id) => {
+    if (id) nav(`/schedules/${id}`, { state: handedOver?.length ? { order: handedOver } : undefined });
+  }, [nav, handedOver]);
   const routes = (allRoutes || []).filter((r) => !schedule || r.cost_center_id === schedule.cost_center_id);
   const company = schedule ? companyOf(schedule.cost_center_id) : null;
   const locs = (allLocs || []).filter((l) => company === null || l.company_id === company);
@@ -88,6 +104,8 @@ export default function ScheduleBuilder() {
   const [publishOpen, setPublishOpen] = useState(false);
   const [newVersion, setNewVersion] = useState(null);
   const [headerForm, setHeaderForm] = useState(null);
+  // The bus is fixed once anything is published: see PUT /schedules/{id}.
+  const busLocked = (schedule?.versions || []).some((v) => v.status !== "DRAFT");
   const [busLanes, setBusLanes] = useState([]);
   const gridRef = useRef(null);
   const isDraft = version?.status === "DRAFT";
@@ -117,10 +135,14 @@ export default function ScheduleBuilder() {
     }
   }, [vid, toast]);
 
-  // page shortcuts: Alt+T/M/C/L add, Alt+V validate, Alt+P publish
+  // page shortcuts: Alt+T/M/C/L add, Alt+V validate, Alt+P publish, Alt+←/→ skim schedules
   useEffect(() => {
     const h = (e) => {
       if (!e.altKey || editor || publishOpen) return;
+      // Alt+←/→ walk the list without going back to it. The activity rows use Alt+↑/↓ for
+      // reordering, so the horizontal pair is free for this.
+      if (e.key === "ArrowLeft" && skim.prev) { e.preventDefault(); goTo(skim.prev); return; }
+      if (e.key === "ArrowRight" && skim.next) { e.preventDefault(); goTo(skim.next); return; }
       const k = e.code.replace("Key", "").toLowerCase();
       const add = ADD.find((x) => x.key === k);
       if (add) { e.preventDefault(); openNew(add.type); }
@@ -245,7 +267,17 @@ export default function ScheduleBuilder() {
   return (
     <>
       <PageHeader
-        title={<span className="flex items-center gap-2"><Link to="/schedules" className="text-slate-400 hover:text-ink"><ChevronLeft className="h-5 w-5" /></Link>{schedule.schedule_code} <span className="font-normal text-slate-500">· {schedule.schedule_name}</span></span>}
+        title={<span className="flex items-center gap-2">
+          <Link to="/schedules" className="text-slate-400 hover:text-ink" title="Back to the list"><ChevronLeft className="h-5 w-5" /></Link>
+          {schedule.schedule_code} <span className="font-normal text-slate-500">· {schedule.schedule_name}</span>
+          {skim.ids.length > 1 && skim.at >= 0 && (
+            <span className="ml-1 inline-flex items-center gap-1 text-sm font-normal text-slate-500">
+              <IconButton icon={ChevronLeft} title="Previous schedule (Alt+←)" disabled={!skim.prev} onClick={() => goTo(skim.prev)} />
+              <span className="tabular-nums">{skim.at + 1} / {skim.ids.length}</span>
+              <IconButton icon={ChevronRight} title="Next schedule (Alt+→)" disabled={!skim.next} onClick={() => goTo(skim.next)} />
+            </span>
+          )}
+        </span>}
         subtitle={<span className="flex flex-wrap items-center gap-x-4 gap-y-1">
           <span className="inline-flex items-center gap-1"><BusFront className="h-4 w-4" /> {schedule.fleet_number} ({schedule.registration_number})</span>
           <span>Daily · effective {fmtDate(schedule.effective_from)} → {schedule.effective_to ? fmtDate(schedule.effective_to) : "open"}</span>
@@ -388,7 +420,7 @@ export default function ScheduleBuilder() {
               )}
             </table>
           </div>
-          {acts.length > 0 && <p className="border-t border-slate-100 px-4 py-2 text-[11px] text-slate-400">↑↓ move between rows · Enter edit · Alt+↑/↓ reorder · Delete remove · Alt+V validate{can("PUBLISHER") ? " · Alt+P publish" : ""}</p>}
+          {acts.length > 0 && <p className="border-t border-slate-100 px-4 py-2 text-[11px] text-slate-400">↑↓ move between rows · Enter edit · Alt+↑/↓ reorder · Delete remove · Alt+V validate{can("PUBLISHER") ? " · Alt+P publish" : ""} · Alt+←/→ previous/next schedule</p>}
         </Card>
 
         <CrewCard version={version} canEdit={canEdit} locs={locs} onSaved={(v) => { setVersion(v); reloadSchedule(); setValidation(null); }} />
@@ -438,16 +470,16 @@ export default function ScheduleBuilder() {
         {headerForm && (
           <div className="space-y-3">
             <TextInput label="Schedule name" value={headerForm.schedule_name} onChange={(e) => setHeaderForm({ ...headerForm, schedule_name: e.target.value })} />
-            <Combobox label="Bus" required value={headerForm.vehicle_id}
+            <Combobox label="Bus" required disabled={busLocked} value={headerForm.vehicle_id}
               onChange={(v) => setHeaderForm({ ...headerForm, vehicle_id: v })}
               placeholder="Type fleet number"
               options={(vehicles || []).filter((v) => v.status === "ACTIVE" || v.vehicle_id === schedule.vehicle_id)
                 .map((v) => ({ value: v.vehicle_id, label: v.fleet_number,
                                sub: v.vehicle_id === schedule.vehicle_id ? "current"
                                  : v.assigned_schedules.length ? `in ${v.assigned_schedules.join(", ")}` : "free" }))} />
-            <p className="-mt-1 text-xs text-slate-500">Moving the schedule to another bus is refused once trip sheets
-              exist for it - the bus that ran those days is read through the schedule. Copy it onto the other bus
-              instead. A clash with another schedule on the same bus is reported when you validate or publish.</p>
+            <p className="-mt-1 text-xs text-slate-500">{busLocked
+              ? "The bus can only change while every version is still a draft: a published version is what crews work to, and the trip sheets of a schedule say which bus ran. Unpublish it, or copy the schedule onto the other bus as a new draft."
+              : "A clash with another schedule on the same bus is reported when you validate or publish this one."}</p>
             <div className="grid grid-cols-2 gap-3">
               <DateInput label="Effective from" required value={headerForm.effective_from} onChange={(v) => setHeaderForm({ ...headerForm, effective_from: v })} />
               <DateInput label="Effective to (blank = open-ended)" value={headerForm.effective_to} base={headerForm.effective_from} onChange={(v) => setHeaderForm({ ...headerForm, effective_to: v })} />

@@ -340,6 +340,21 @@ def test_bus_change_checks(world):
     assert "BUS_CHANGE_SAME" in codes
 
 
+def test_the_bus_is_fixed_once_a_version_is_published(world):
+    """Published but not yet operated: still refused, because bus clashes between schedules are
+    only computed at validate/publish time."""
+    s, vid = published(world)
+    r = world["client"].put(f"/api/schedules/{s['schedule_id']}",
+                            json={"vehicle_id": world["bus2"]["vehicle_id"]}, headers=world["h"])
+    assert r.status_code == 409 and "is published" in r.text
+    # unpublishing puts the version back to draft, and then the bus may move again
+    assert world["client"].post(f"/api/schedule-versions/{vid}/unpublish", json={},
+                                headers=world["h"]).status_code == 200
+    r = world["client"].put(f"/api/schedules/{s['schedule_id']}",
+                            json={"vehicle_id": world["bus2"]["vehicle_id"]}, headers=world["h"])
+    assert r.status_code == 200 and r.json()["fleet_number"] == "B2"
+
+
 def test_the_bus_cannot_be_changed_once_the_schedule_has_operated(world):
     """A schedule's trip sheets say which bus ran: repointing it would rewrite that history."""
     s, _ = published(world)

@@ -106,7 +106,7 @@ export default function Schedules() {
           </span>
         )}>
         {(data || []).length === 0 ? <Empty icon={CalendarClock} title="No schedules yet">Create one and assign it to a bus.</Empty> : (
-          <Table rowKey={(r) => r.schedule_id} rows={rows} onRowClick={(r) => nav(`/schedules/${r.schedule_id}`)}
+          <Table rowKey={(r) => r.schedule_id} rows={rows} onRowClick={(r) => nav(`/schedules/${r.schedule_id}`, { state: { order: rows.map((x) => x.schedule_id) } })}
             sort={sort} onSortChange={setSort} columns={[
             { key: "schedule_code", title: "Code", className: "font-medium", sortable: true },
             { key: "schedule_name", title: "Name", sortable: true },
