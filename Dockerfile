@@ -1,4 +1,4 @@
-# Multi-stage build (same layout as sunlease-hrms1)
+# Multi-stage build (same layout as sunlease-hrms)
 FROM node:20-alpine AS frontend-builder
 WORKDIR /app/frontend
 COPY frontend/package*.json ./

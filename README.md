@@ -12,7 +12,7 @@ cross midnight and run into Day 2 or later. Published versions are immutable; re
 | Layer | Technology |
 |---|---|
 | Backend | FastAPI, SQLAlchemy 2, Pydantic 2, SQLite (portable to PostgreSQL) |
-| Migrations | `app/migrate.py` - additive, runs on every start (same approach as sunlease-hrms1) |
+| Migrations | `app/migrate.py` - additive, runs on every start (same approach as sunlease-hrms) |
 | Frontend | React 19, Vite, Tailwind 3, React Router, Axios, Lucide (plain JS/JSX) |
 | Auth | JWT, local users, roles `VIEWER` < `SCHEDULER` < `PUBLISHER` < `ADMIN` |
 | Deploy | Docker (multi-stage), `./data` volume, port **8030** |
@@ -243,8 +243,11 @@ working day, and stints cannot overlap. A rejoiner gets a new row. There are two
    "home_depot_code": "DEP01", "start_date": "2025-04-01", "end_date": null, "status": "ACTIVE"}
   ```
   `staff_type` is `DRIVER`, `CONDUCTOR` or `DEPOT_STAFF`. One object per employment episode.
-  sunlease-hrms1 does not expose this endpoint yet. It needs a small read-only export route
-  (not built; it changes the HRMS project).
+  sunlease-hrms serves this at `GET /api/v1/integrations/depot-employees`, which answers
+  `{"employees": [...]}` (a bare list is also accepted). It authenticates a service token, not a
+  user login: mint one in HRMS with `python -m app.service_token --name depot-sync --scope
+  employees:depot-export`, then put the URL and token under **Settings -> HRMS sync**. Sync from
+  HRMS lists what the endpoint returns and lets you pick who to pull in.
 
 ## Keyboard-first data entry
 

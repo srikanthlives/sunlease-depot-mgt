@@ -1,4 +1,4 @@
-"""Additive auto-migration (no Alembic), same approach as sunlease-hrms1.
+"""Additive auto-migration (no Alembic), same approach as sunlease-hrms.
 
 Creates missing tables, adds missing columns, and (on SQLite) installs the
 triggers that make published schedule content immutable even when the API

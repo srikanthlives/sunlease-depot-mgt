@@ -7,7 +7,7 @@ schedule module). This file records the decisions made before coding and the bui
 
 | Area | Decision |
 |---|---|
-| App | Standalone app in `sunlease-depomgt`, modelled on `sunlease-hrms1` |
+| App | Standalone app in `sunlease-depomgt`, modelled on `sunlease-hrms` |
 | Backend | FastAPI, SQLAlchemy 2, Pydantic 2, SQLite (portable to PostgreSQL) |
 | Migrations | HRMS-style additive `migrate.py`, run on every start (not Alembic) |
 | Frontend | React 19, Vite, Tailwind 3, React Router, Axios, Lucide, plain JS/JSX |
@@ -27,8 +27,9 @@ schedule module). This file records the decisions made before coding and the bui
 - Unique key `(employee_number, start_date)`; overlapping stints for the same employee rejected.
 - Available on date D iff `start_date <= D` and (`end_date` is null or `D <= end_date`).
 - Loaded two ways, both upserting: **Excel upload** (downloadable template) and
-  **HRMS sync** (pull from a read-only HRMS export endpoint; configured via env, needs a small
-  endpoint added to `sunlease-hrms1` when approved).
+  **HRMS sync** (pull from a read-only HRMS export endpoint, configured under Settings per cost
+  center with the deployment-wide env vars as a fallback). The sync previews the payload and the
+  user ticks which stints to pull in; see README.
 - Later phases: crew assignment is rejected outside employee dates; end dates inside a
   schedule's validity window raise warnings; pickers list only available staff.
 
@@ -75,7 +76,7 @@ Deviations from the plan:
 - No planned odometer readings (decided 21-Oct-2026): a recurring schedule cannot know the bus's odometer, so schedules carry
   planned km only; trip sheets will compare actual km against them. The odometer columns are dropped by migrate.py.
 - Summary tiles include steering time (passenger trips + non-revenue movements).
-- **Multi-tenancy** (added 21-Oct-2026, modelled on sunlease-hrms1 but with roles per cost center): Company -> Cost
+- **Multi-tenancy** (added 21-Oct-2026, modelled on sunlease-hrms but with roles per cost center): Company -> Cost
   Center; `UserCostCenterRole` holds a role per cost center; `User.role` is SUPER_ADMIN or USER. Scoping lives in
   `core/access.py` (header `X-Cost-Center-Id`, `all` = combined read view). Locations are company-level.
 - **Trip sheets phase A** (21-Oct-2026): board, entry from the paper sheet, billing = planned km minus lost km
@@ -96,8 +97,12 @@ Deviations from the plan:
 - Extra activity type **Halt** (not in the spec): one undivided off-service block at a depot or night-halt terminal
   (parking, washing, charging, maintenance are not timed separately). SOC may rise or fall. Halt time is left out of the
   cycle time but still counts for bus conflicts and the 24-hour limit.
-- HRMS export endpoint in sunlease-hrms1 not built (needs approval to change that project); the sync client
-  and its JSON contract are ready (see README).
+- HRMS export endpoint built in `sunlease-hrms` (04-Nov-2026) as
+  `GET /api/v1/integrations/depot-employees`, authenticated by an HRMS service token rather than a
+  user login. HRMS owns the translation: it exports only employees whose category is
+  *Operations Staff* and designation *Coach Captain* (as `staff_type` DRIVER), maps its episode
+  statuses onto ACTIVE/INACTIVE and drops half-entered records. Uncommitted in that repo as of
+  this note, so not yet live on hrms.sunlease.in.
 - Docker publishes on port 8030 (8000 is used by another local app; HRMS uses 8020).
 
 Next phases: crew assignment to published activities (using employee stint dates), Part 2 trip sheets.
