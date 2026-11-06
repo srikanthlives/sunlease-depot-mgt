@@ -37,21 +37,40 @@ export function newActivity(type, prev, activities) {
   return base;
 }
 
-/** Carry day offsets forward through a stop list: a time earlier than the previous one rolls to the next day. */
+const OFF_FIELDS = [["scheduled_arrival_time", "arrival_day_offset", "pin_arr"],
+                    ["scheduled_departure_time", "departure_day_offset", "pin_dep"]];
+
+/**
+ * Carry day offsets forward through a stop list: a time earlier than the previous one rolls to the
+ * next day. A pinned offset (one the user typed) is kept as given and the carry continues from it,
+ * so legs longer than 24 hours - which the clock alone cannot reveal - stay editable.
+ */
 function carryOffsets(stops, startOffset) {
   let off = startOffset || 0;
   let last = null;
   return stops.map((s) => {
     const out = { ...s };
-    for (const [t, o] of [["scheduled_arrival_time", "arrival_day_offset"], ["scheduled_departure_time", "departure_day_offset"]]) {
-      if (!out[t]) { out[o] = null; continue; }
+    for (const [t, o, p] of OFF_FIELDS) {
+      if (!out[t]) { out[o] = null; out[p] = false; continue; }
       const m = relMin(0, out[t]);
-      if (last !== null && m < last) off += 1;
+      if (out[p]) off = Number(out[o]) || 0;
+      else if (last !== null && m < last) off += 1;
       out[o] = off;
       last = m;
     }
     return out;
   });
+}
+
+/** Pin saved offsets the carry rule would not reproduce, so opening and editing a trip keeps them. */
+function pinSaved(stops, startOffset) {
+  const auto = carryOffsets(stops.map((s) => ({ ...s, pin_arr: false, pin_dep: false })), startOffset);
+  const pinned = stops.map((s, i) => {
+    const out = { ...s };
+    for (const [t, o, p] of OFF_FIELDS) out[p] = !!out[t] && (out[o] ?? 0) !== auto[i][o];
+    return out;
+  });
+  return carryOffsets(pinned, startOffset);
 }
 
 function StopTimetable({ trip, setTrip, direction, startOffset }) {
@@ -92,18 +111,16 @@ function StopTimetable({ trip, setTrip, direction, startOffset }) {
                   <td className="px-2 py-1 text-right text-xs tabular-nums text-slate-500">{Number(s.cumulative_km)}</td>
                   <td className="px-2 py-1" data-row={i} data-col="arr">
                     {isFirst ? <span className="text-xs text-slate-400">—</span> : (
-                      <div className="flex items-center gap-1">
-                        <TimeInput value={s.scheduled_arrival_time} placeholder={prevTime(i, "arr") || "HH:MM"} suggest={prevTime(i, "arr")} onChange={(v) => setStop(i, { scheduled_arrival_time: v, ...(isLast ? {} : !s.scheduled_departure_time && v ? { scheduled_departure_time: v } : {}) })} />
-                        {s.arrival_day_offset > 0 && <span className="rounded bg-brand-50 px-1 text-[11px] font-semibold text-brand-700">+{s.arrival_day_offset}</span>}
-                      </div>
+                      <TimeInput value={s.scheduled_arrival_time} placeholder={prevTime(i, "arr") || "HH:MM"} suggest={prevTime(i, "arr")}
+                        offset={s.arrival_day_offset} onOffsetChange={(v) => setStop(i, { arrival_day_offset: v, pin_arr: true })}
+                        onChange={(v) => setStop(i, { scheduled_arrival_time: v, pin_arr: false, ...(isLast ? {} : !s.scheduled_departure_time && v ? { scheduled_departure_time: v } : {}) })} />
                     )}
                   </td>
                   <td className="px-2 py-1" data-row={i} data-col="dep">
                     {isLast ? <span className="text-xs text-slate-400">—</span> : (
-                      <div className="flex items-center gap-1">
-                        <TimeInput value={s.scheduled_departure_time} placeholder={prevTime(i, "dep") || "HH:MM"} suggest={prevTime(i, "dep")} onChange={(v) => setStop(i, { scheduled_departure_time: v })} />
-                        {s.departure_day_offset > 0 && <span className="rounded bg-brand-50 px-1 text-[11px] font-semibold text-brand-700">+{s.departure_day_offset}</span>}
-                      </div>
+                      <TimeInput value={s.scheduled_departure_time} placeholder={prevTime(i, "dep") || "HH:MM"} suggest={prevTime(i, "dep")}
+                        offset={s.departure_day_offset} onOffsetChange={(v) => setStop(i, { departure_day_offset: v, pin_dep: true })}
+                        onChange={(v) => setStop(i, { scheduled_departure_time: v, pin_dep: false })} />
                     )}
                   </td>
                   <td className="px-2 py-1 text-xs tabular-nums text-slate-500">{arr !== null && dep !== null ? (dep < arr ? <span className="text-danger">negative</span> : fmtDuration(dep - arr)) : ""}</td>
@@ -116,7 +133,9 @@ function StopTimetable({ trip, setTrip, direction, startOffset }) {
       </div>
       <p className="text-[11px] text-slate-500">
         Stops load from the {direction?.direction_code} direction. Press Enter on an empty time to take the greyed suggestion (previous departure); a departure defaults to its arrival.
-        A time earlier than the previous one rolls to the next day automatically (+1). The km column is the route distance from the origin; SOC is an optional planning reference.
+        A time earlier than the previous one rolls to the next day automatically (+1); for a leg that runs over 24 hours set the day box
+        beside the time yourself (+ / - or arrow keys). Retyping the time hands that stop back to the automatic rule.
+        The km column is the route distance from the origin; SOC is an optional planning reference.
       </p>
     </div>
   );
@@ -369,6 +388,7 @@ export function toEditor(act, routes) {
         planned_soc_pct: n(s.planned_soc_pct),
       };
     });
+    a.trip.stops = pinSaved(a.trip.stops, a.start_day_offset ?? 0);
   }
   for (const k of ["movement", "charging", "layover", "halt"]) {
     if (a[k]) for (const f of Object.keys(a[k])) if (/km|pct|kwh/.test(f)) a[k][f] = n(a[k][f]);
