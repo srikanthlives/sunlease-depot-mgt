@@ -266,39 +266,6 @@ def references(db: Session, employee_id: int) -> dict:
     return {k: v for k, v in counts.items() if v}
 
 
-def check_transfer(db: Session, e: Employee, target_cc: int, effective_from: dt.date | None) -> dict:
-    """Every reason a transfer can be refused, gathered in one read-only place.
-
-    Returns where the stint is already used - empty for a plain move. Kept apart from `transfer` so
-    a bulk move can vet the whole selection before touching anything.
-    """
-    if e.cost_center_id == target_cc:
-        raise HTTPException(409, "The employee is already in that cost center")
-    used = references(db, e.employee_id)
-    if not used:
-        return used
-    if effective_from is None:
-        raise HTTPException(422, "This employee has already worked in this cost center, so the "
-                                 "transfer needs a date: their stint here ends the day before it")
-    if effective_from <= e.start_date:
-        raise HTTPException(422, f"The transfer date must be after the stint started "
-                                 f"({e.start_date:%d-%b-%Y})")
-    if e.end_date and effective_from > e.end_date:
-        raise HTTPException(422, f"The stint here already ended on {e.end_date:%d-%b-%Y}")
-    check_overlap(db, e.employee_number, effective_from, None, exclude_id=e.employee_id)
-    return used
-
-
-def transfer_problem(db: Session, e: Employee, target_cc: int,
-                     effective_from: dt.date | None) -> str | None:
-    """Why this employee could not be transferred, or None if they can be."""
-    try:
-        check_transfer(db, e, target_cc, effective_from)
-    except HTTPException as exc:
-        return str(exc.detail)
-    return None
-
-
 def transfer(db: Session, e: Employee, target_cc: int, effective_from: dt.date | None, user) -> dict:
     """Move an employee to another cost center.
 
@@ -310,13 +277,24 @@ def transfer(db: Session, e: Employee, target_cc: int, effective_from: dt.date |
       a new stint starts at the other one, which is what the per-stint `employees` table is for.
       Their old duties and trip sheets stay with the depot where they happened.
     """
-    used = check_transfer(db, e, target_cc, effective_from)
+    if e.cost_center_id == target_cc:
+        raise HTTPException(409, "The employee is already in that cost center")
+    used = references(db, e.employee_id)
     if not used:
         e.cost_center_id = target_cc
         # the home depot is company-level, so it stays valid; the caller has checked the company
         return {"action": "MOVED", "employee_id": e.employee_id, "used": {}}
 
+    if effective_from is None:
+        raise HTTPException(422, "This employee has already worked in this cost center, so the "
+                                 "transfer needs a date: their stint here ends the day before it")
+    if effective_from <= e.start_date:
+        raise HTTPException(422, f"The transfer date must be after the stint started "
+                                 f"({e.start_date:%d-%b-%Y})")
+    if e.end_date and effective_from > e.end_date:
+        raise HTTPException(422, f"The stint here already ended on {e.end_date:%d-%b-%Y}")
     last_day = effective_from - dt.timedelta(days=1)
+    check_overlap(db, e.employee_number, effective_from, None, exclude_id=e.employee_id)
     e.end_date = last_day
     new = Employee(employee_number=e.employee_number, full_name=e.full_name, designation=e.designation,
                    staff_type=e.staff_type, home_depot_id=None, start_date=effective_from,

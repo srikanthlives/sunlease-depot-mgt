@@ -29,7 +29,6 @@ export default function Employees() {
   const [errors, setErrors] = useState({});
   const [importResult, setImportResult] = useState(null);
   const [transfer, setTransfer] = useState(null);
-  const [picked, setPicked] = useState([]);
   const [sync, setSync] = useState(null);
   const [busy, setBusy] = useState(false);
   const file = useRef(null);
@@ -37,50 +36,31 @@ export default function Employees() {
     (!q || `${e.employee_number} ${e.full_name} ${e.designation || ""}`.toLowerCase().includes(q.toLowerCase()))), [data, q, staff]);
   const depots = locOptions(locs, (l) => l.location_type === "DEPOT");
 
-  /**
-   * Transfer, for one employee or a whole selection: where they may go, and how many of them have
-   * already been used here and so need their stint split rather than simply moved.
-   */
-  const openTransfer = async (people) => {
+  /** Transfer: where the employee may go, and whether a stint split is needed. */
+  const openTransfer = async (e) => {
     try {
-      const { data: usage } = await client.post("/employees-usage",
-        { employee_ids: people.map((p) => p.employee_id) });
-      const used = people.filter((p) => Object.keys(usage.used?.[p.employee_id] || {}).length);
-      setTransfer({ people, used, usage: usage.used || {},
-                    cost_center_id: null, effective_from: used.length ? todayIso() : null });
+      const { data: usage } = await client.get(`/employees/${e.employee_id}/usage`);
+      const used = Object.entries(usage.used || {});
+      setTransfer({ e, used, cost_center_id: null, effective_from: used.length ? todayIso() : null });
     } catch (err) {
       toast.error(apiErrorMessage(err));
     }
   };
   const runTransfer = async () => {
-    const { people, used, cost_center_id, effective_from } = transfer;
+    const { e, used, cost_center_id, effective_from } = transfer;
     if (!cost_center_id) return toast.error("Pick the cost center to move them to");
-    if (used.length && !effective_from) return toast.error("Pick the first day at the new cost center");
-    setBusy(true);
     try {
-      const { data } = await client.post("/employees-transfer",
-        { employee_ids: people.map((p) => p.employee_id), cost_center_id,
-          effective_from: used.length ? effective_from : null });
-      const parts = [data.moved && `${data.moved} moved`, data.transferred && `${data.transferred} re-stinted`];
-      toast.ok(people.length === 1
-        ? `${people[0].full_name} ${data.transferred ? `has a new stint at ${ccCode(cost_center_id)} from ${fmtDate(effective_from)}` : `moved to ${ccCode(cost_center_id)}`}`
-        : `${parts.filter(Boolean).join(" · ")} to ${ccCode(cost_center_id)}`);
+      const { data } = await client.post(`/employees/${e.employee_id}/transfer`,
+        { cost_center_id, effective_from: used.length ? effective_from : null });
+      toast.ok(used.length
+        ? `${e.full_name}: stint here ended, new stint from ${fmtDate(data.start_date)}`
+        : `${e.full_name} moved to ${ccCode(cost_center_id)}`);
       setTransfer(null);
-      setPicked([]);
       reload();
     } catch (err) {
       toast.error(apiErrorMessage(err));
-    } finally {
-      setBusy(false);
     }
   };
-  /** Only rows you administer can be picked, and a batch cannot straddle two companies. */
-  const movable = useMemo(() => rows.filter((r) => canIn(r.cost_center_id, "ADMIN")), [rows, canIn]);
-  const selected = useMemo(() => (data || []).filter((e) => picked.includes(e.employee_id)), [data, picked]);
-  const companyOf = (ccId) => costCenters.find((o) => o.cost_center_id === ccId)?.company_id;
-  const mixedCompanies = new Set(selected.map((e) => companyOf(e.cost_center_id))).size > 1;
-  const togglePick = (id) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
-  const pickAll = (on) => setPicked(on ? movable.map((r) => r.employee_id) : []);
   const set = (k) => (v) => setEdit((x) => ({ ...x, [k]: v }));
   const save = async () => {
     const e = {};
@@ -182,25 +162,8 @@ export default function Employees() {
           <DateInput value={on} onChange={(v) => setOn(v || todayIso())} />
         </div>
       </div>
-      {selected.length > 0 && (
-        <div className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm">
-          <b className="tabular-nums">{selected.length} selected</b>
-          {mixedCompanies && <span className="text-xs text-danger">They belong to different companies - an employee can only move within their own company.</span>}
-          <span className="ml-auto flex items-center gap-2">
-            <Button size="sm" variant="secondary" onClick={() => setPicked([])}>Clear</Button>
-            <Button size="sm" icon={ArrowRightLeft} disabled={mixedCompanies}
-              onClick={() => openTransfer(selected)}>Move to another cost center</Button>
-          </span>
-        </div>
-      )}
       <Card title={`${rows.length} employment records`} padded={false} actions={<TextInput placeholder="Search number, name, designation" value={q} onChange={(e) => setQ(e.target.value)} className="w-64" />}>
-        <Table rowKey={(r) => r.employee_id} rows={rows} onRowClick={(r) => canIn(r.cost_center_id, "SCHEDULER") && (setErrors({}), setEdit({ ...r }))}
-          rowClassName={(r) => picked.includes(r.employee_id) && "bg-brand-50"} columns={[
-          ...(movable.length ? [{ key: "pick", className: "w-10",
-            title: <Checkbox label="" checked={!!movable.length && picked.length === movable.length} onChange={pickAll} />,
-            render: (r) => (canIn(r.cost_center_id, "ADMIN")
-              ? <span onClick={(e) => e.stopPropagation()}><Checkbox label="" checked={picked.includes(r.employee_id)} onChange={() => togglePick(r.employee_id)} /></span>
-              : <span className="text-slate-300">—</span>) }] : []),
+        <Table rowKey={(r) => r.employee_id} rows={rows} onRowClick={(r) => canIn(r.cost_center_id, "SCHEDULER") && (setErrors({}), setEdit({ ...r }))} columns={[
           { key: "employee_number", title: "Emp. no.", className: "font-medium" },
           { key: "full_name", title: "Name" },
           { key: "cc", title: "Cost center", render: (r) => ccCode(r.cost_center_id) },
@@ -212,7 +175,7 @@ export default function Employees() {
           { key: "source", title: "Source", render: (r) => <span className="text-xs text-slate-500">{label(r.source)}</span> },
           { key: "x", title: "", className: "w-10 text-right", render: (r) => canIn(r.cost_center_id, "ADMIN") && (
             <span onClick={(e) => e.stopPropagation()}>
-              <IconButton icon={ArrowRightLeft} title="Move to another cost center" onClick={() => openTransfer([r])} />
+              <IconButton icon={ArrowRightLeft} title="Move to another cost center" onClick={() => openTransfer(r)} />
             </span>
           ) },
         ]} />
@@ -239,70 +202,35 @@ export default function Employees() {
           </div>
         )}
       </Modal>
-      <Modal open={!!transfer} wide={transfer?.people.length > 1}
-        title={transfer ? (transfer.people.length === 1 ? `Move ${transfer.people[0].full_name}` : `Move ${transfer.people.length} employees`) : ""}
+      <Modal open={!!transfer} title={transfer ? `Move ${transfer.e.full_name}` : ""}
         onClose={() => setTransfer(null)} onSave={runTransfer}>
         {transfer && (
           <div className="space-y-3">
             <Select label="Move to cost center" required value={transfer.cost_center_id || ""}
               onChange={(v) => setTransfer({ ...transfer, cost_center_id: Number(v) })}
               options={costCenters
-                .filter((m) => !transfer.people.every((p) => p.cost_center_id === m.cost_center_id)
-                  && m.role === "ADMIN" && m.company_id === companyOf(transfer.people[0].cost_center_id))
+                .filter((m) => m.cost_center_id !== transfer.e.cost_center_id && m.role === "ADMIN"
+                  && m.company_id === costCenters.find((o) => o.cost_center_id === transfer.e.cost_center_id)?.company_id)
                 .map((m) => ({ value: m.cost_center_id, label: `${m.cost_center_code} - ${m.cost_center_name}`,
                                sub: m.company_name }))}
               placeholder="No other cost center of this company that you administer" />
             {transfer.used.length === 0 ? (
               <p className="text-xs text-slate-500">
-                {transfer.people.length === 1 ? "This stint is" : `None of these ${transfer.people.length} stints are`} used
-                anywhere yet, so {transfer.people.length === 1 ? "it simply moves" : "they simply move"} to the
-                other cost center - nothing else changes.
+                This stint is not used anywhere yet, so it simply moves to the other cost center -
+                nothing else changes.
               </p>
             ) : (
               <>
                 <DateInput label="First day at the new cost center" required value={transfer.effective_from}
-                  base={transfer.people.map((p) => p.start_date).sort().slice(-1)[0]}
+                  base={transfer.e.start_date}
                   onChange={(v) => setTransfer({ ...transfer, effective_from: v })} />
                 <p className="text-xs text-slate-500">
-                  {transfer.used.length} of {transfer.people.length} {transfer.used.length === 1 ? "has" : "have"} already
-                  been used here, so {transfer.used.length === 1 ? "that stint" : "those stints"} end the day before and
-                  new ones start at the other cost center. The duties and trip sheets already recorded stay with this
-                  depot. {transfer.people.length > transfer.used.length
-                    && `The other ${transfer.people.length - transfer.used.length} simply move across.`}
+                  {transfer.e.full_name} has already been used here
+                  ({transfer.used.map(([k, v]) => `${v} ${k.replace(/_/g, " ")}`).join(", ")}), so the stint at
+                  this depot ends the day before and a new stint starts at the other one. The duties and
+                  trip sheets already recorded stay with this depot.
                 </p>
               </>
-            )}
-            {transfer.people.length > 1 && (
-              <div className="max-h-64 overflow-auto rounded-lg border border-slate-200">
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
-                    <tr><th className="px-2 py-1.5">Emp. no.</th><th className="px-2 py-1.5">Name</th>
-                      <th className="px-2 py-1.5">From</th><th className="px-2 py-1.5">Used here</th></tr>
-                  </thead>
-                  <tbody>
-                    {transfer.people.map((p) => {
-                      const u = Object.entries(transfer.usage[p.employee_id] || {});
-                      return (
-                        <tr key={p.employee_id} className="border-t border-slate-100">
-                          <td className="px-2 py-1 font-medium">{p.employee_number}</td>
-                          <td className="px-2 py-1">{p.full_name}</td>
-                          <td className="px-2 py-1 text-slate-500">{ccCode(p.cost_center_id)}</td>
-                          <td className="px-2 py-1 text-xs text-slate-500">
-                            {u.length ? u.map(([k, v]) => `${v} ${k.replace(/_/g, " ")}`).join(", ")
-                              : <span className="text-slate-400">not used - plain move</span>}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {transfer.people.length > 1 && (
-              <p className="text-xs text-slate-500">
-                The whole batch is applied together: if any one of them cannot move, nothing does and you
-                are told why.
-              </p>
             )}
           </div>
         )}

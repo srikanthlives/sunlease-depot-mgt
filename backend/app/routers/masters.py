@@ -447,65 +447,6 @@ def transfer_employee(employee_id: int, body: S.EmployeeTransferIn, db: Session 
     return _emp_out(db.get(Employee, result["employee_id"]))
 
 
-@router.post("/employees-usage")
-def employees_usage(body: S.EmployeeIdsIn, db: Session = Depends(get_db), sc: Scope = Depends(scope)):
-    """Usage for a whole selection, so a bulk move can say up front how many need a stint split."""
-    out = {}
-    for employee_id in dict.fromkeys(body.employee_ids):
-        e = db.get(Employee, employee_id)
-        if e is None:
-            continue
-        sc.require(e.cost_center_id, Role.VIEWER, "Employee")
-        out[str(employee_id)] = employee_service.references(db, employee_id)
-    return {"used": out}
-
-
-@router.post("/employees-transfer")
-def transfer_employees(body: S.EmployeeBulkTransferIn, db: Session = Depends(get_db),
-                       sc: Scope = Depends(scope)):
-    """Move several employees to another cost center in one go.
-
-    All or nothing: a batch that cannot be applied whole is refused and nothing moves, so the
-    operator never has to work out which half of a transfer list went through. The whole selection is
-    vetted read-only first and every problem reported together, which also avoids leaning on
-    savepoints - unreliable under the SQLite driver - to undo a half-applied batch.
-    """
-    sc.require(body.cost_center_id, Role.ADMIN, "Cost center")
-    target_company = sc.companies.get(body.cost_center_id)
-    people, errors = [], []
-    for employee_id in dict.fromkeys(body.employee_ids):          # tolerate a repeated id
-        e = db.get(Employee, employee_id)
-        if e is None:
-            errors.append((str(employee_id), "Employee not found"))
-            continue
-        sc.require(e.cost_center_id, Role.ADMIN, "Employee")
-        if sc.companies.get(e.cost_center_id) != target_company:
-            problem = "An employee can only move between cost centers of the same company"
-        else:
-            problem = employee_service.transfer_problem(db, e, body.cost_center_id,
-                                                        body.effective_from)
-        if problem:
-            errors.append((e.employee_number, problem))
-        else:
-            people.append(e)
-    if errors:
-        listed = "; ".join(f"{who}: {why}" for who, why in errors[:5])
-        more = f" and {len(errors) - 5} more" if len(errors) > 5 else ""
-        raise HTTPException(422, f"Nothing was transferred. {len(errors)} of "
-                                 f"{len(errors) + len(people)} cannot move - {listed}{more}")
-
-    counts = {"MOVED": 0, "TRANSFERRED": 0}
-    for e in people:
-        result = employee_service.transfer(db, e, body.cost_center_id, body.effective_from, sc.user)
-        audit_service.record(db, sc.user, "TRANSFER", "Employee", e.employee_id,
-                             body.model_dump(mode="json", exclude={"employee_ids"})
-                             | {k: str(v) for k, v in result.items()})
-        counts[result["action"]] += 1
-    _commit(db, "Employee")
-    return {"cost_center_id": body.cost_center_id,
-            "moved": counts["MOVED"], "transferred": counts["TRANSFERRED"]}
-
-
 @router.get("/employees-template")
 def employee_template(_: User = Depends(deps.get_current_user)):
     return Response(employee_service.template_bytes(),

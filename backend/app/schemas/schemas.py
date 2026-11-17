@@ -248,14 +248,6 @@ class EmployeeTransferIn(BaseModel):
     effective_from: Optional[dt.date] = None
 
 
-class EmployeeIdsIn(BaseModel):
-    employee_ids: list[int] = Field(min_length=1)
-
-
-class EmployeeBulkTransferIn(EmployeeTransferIn, EmployeeIdsIn):
-    pass
-
-
 class RosterIn(BaseModel):
     roster_code: str = Field(min_length=1, max_length=30)
     roster_name: Optional[str] = None
